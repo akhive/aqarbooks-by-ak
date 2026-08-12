@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChequesRouteImport } from './routes/cheques'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as UnitsRouteImport } from './routes/units'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const ChequesRoute = ChequesRouteImport.update({
   id: '/cheques',
   path: '/cheques',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TenantsRoute = TenantsRouteImport.update({
@@ -38,12 +44,14 @@ const UnitsRoute = UnitsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cheques': typeof ChequesRoute
+  '/reports': typeof ReportsRoute
   '/tenants': typeof TenantsRoute
   '/units': typeof UnitsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cheques': typeof ChequesRoute
+  '/reports': typeof ReportsRoute
   '/tenants': typeof TenantsRoute
   '/units': typeof UnitsRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cheques': typeof ChequesRoute
+  '/reports': typeof ReportsRoute
   '/tenants': typeof TenantsRoute
   '/units': typeof UnitsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/cheques' | '/tenants' | '/units'
+  fullPaths: '/' | '/cheques' | '/reports' | '/tenants' | '/units'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/cheques' | '/tenants' | '/units'
-  id: '__root__' | '/' | '/cheques' | '/tenants' | '/units'
+  to: '/' | '/cheques' | '/reports' | '/tenants' | '/units'
+  id: '__root__' | '/' | '/cheques' | '/reports' | '/tenants' | '/units'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChequesRoute: typeof ChequesRoute
+  ReportsRoute: typeof ReportsRoute
   TenantsRoute: typeof TenantsRoute
   UnitsRoute: typeof UnitsRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/cheques'
       fullPath: '/cheques'
       preLoaderRoute: typeof ChequesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tenants': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChequesRoute: ChequesRoute,
+  ReportsRoute: ReportsRoute,
   TenantsRoute: TenantsRoute,
   UnitsRoute: UnitsRoute,
 }
