@@ -258,12 +258,11 @@ function TenantsPage() {
         </DialogContent>
       </Dialog>
 
-      <p className="mt-4 text-xs text-muted-foreground">
-        <Badge variant="secondary" className="mr-2">
-          Tip
-        </Badge>
-        Deleting a tenant also removes their cheques.
-      </p>
+      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="secondary">Tip</Badge>
+        <span>Deleting a tenant also removes their cheques.</span>
+      </div>
+
     </AppShell>
   );
 }
