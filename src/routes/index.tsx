@@ -45,7 +45,7 @@ function Stat({
 }: {
   label: string;
   value: string;
-  hint?: string;
+  hint?: string | undefined;
   icon: React.ElementType;
   tone?: "default" | "positive" | "negative";
 }) {
