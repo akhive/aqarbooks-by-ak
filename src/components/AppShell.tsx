@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Building2 className="size-5" />
             </span>
             <span className="leading-tight">
-              <span className="block text-base font-semibold tracking-tight">Estate Manager</span>
+              <span className="block text-base font-semibold tracking-tight">Aqar Books</span>
               <span className="block text-xs text-muted-foreground">Rentals, PDCs & reporting</span>
             </span>
           </Link>
