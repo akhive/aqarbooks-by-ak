@@ -5,6 +5,7 @@ const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/tenants", label: "Tenants", icon: Users },
   { to: "/cheques", label: "Cheques (PDC)", icon: Banknote },
+  { to: "/reconciliation", label: "Bank Reconciliation", icon: FileBarChart2 },
   { to: "/units", label: "Units", icon: DoorOpen },
   { to: "/reports", label: "Reports", icon: FileBarChart2 },
 ] as const;
