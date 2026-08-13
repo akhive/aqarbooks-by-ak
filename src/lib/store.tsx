@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { supabase } from "../supabase";
 
 export type TenantStatus = "Active" | "Expired" | "Notice";
 export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
@@ -48,152 +49,227 @@ type Data = {
   expenses: Expense[];
 };
 
-const uid = () => Math.random().toString(36).slice(2, 10);
-const y = new Date().getFullYear();
-const d = (m: number, day: number, year = y) =>
-  `${year}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-
-const seed = (): Data => {
-  const units: Unit[] = [
-    { id: uid(), flatNo: "101", building: "Al Noor Tower", type: "2 BHK", marketRent: 55000 },
-    { id: uid(), flatNo: "102", building: "Al Noor Tower", type: "1 BHK", marketRent: 42000 },
-    { id: uid(), flatNo: "201", building: "Al Noor Tower", type: "2 BHK", marketRent: 58000 },
-    { id: uid(), flatNo: "202", building: "Al Noor Tower", type: "Studio", marketRent: 30000 },
-    { id: uid(), flatNo: "301", building: "Marina View", type: "3 BHK", marketRent: 90000 },
-    { id: uid(), flatNo: "302", building: "Marina View", type: "2 BHK", marketRent: 62000 },
-  ];
-  const tenants: Tenant[] = [
-    {
-      id: uid(),
-      name: "Ahmed Khalid",
-      phone: "+971 50 123 4567",
-      flatNo: "101",
-      contractStart: d(1, 1),
-      contractEnd: d(12, 31),
-      rentAmount: 55000,
-      status: "Active",
-    },
-    {
-      id: uid(),
-      name: "Priya Nair",
-      phone: "+971 55 998 1122",
-      flatNo: "201",
-      contractStart: d(3, 15),
-      contractEnd: d(3, 14, y + 1),
-      rentAmount: 58000,
-      status: "Active",
-    },
-    {
-      id: uid(),
-      name: "John Mathew",
-      phone: "+971 52 776 4433",
-      flatNo: "301",
-      contractStart: d(6, 1, y - 1),
-      contractEnd: d(5, 31),
-      rentAmount: 88000,
-      status: "Notice",
-    },
-    {
-      id: uid(),
-      name: "Sara Ali",
-      phone: "+971 56 220 7788",
-      flatNo: "102",
-      contractStart: d(2, 1),
-      contractEnd: d(1, 31, y + 1),
-      rentAmount: 42000,
-      status: "Active",
-    },
-  ];
-  const cheques: Cheque[] = [];
-  tenants.forEach((t) => {
-    for (let i = 0; i < 4; i++) {
-      const month = ((i * 3 + 1) % 12) + 1;
-      cheques.push({
-        id: uid(),
-        tenantId: t.id,
-        chequeDate: d(month, 5),
-        chequeNo: String(100000 + Math.floor(Math.random() * 899999)),
-        bank: ["Emirates NBD", "ADCB", "Mashreq", "FAB"][i % 4]!,
-        amount: Math.round(t.rentAmount / 4),
-        status: month <= new Date().getMonth() + 1 ? "Cleared" : "PDC",
-        reconciled: month <= new Date().getMonth() + 1,
-      });
-    }
-  });
-  const expenses: Expense[] = [
-    { id: uid(), date: d(1, 12), category: "Maintenance", description: "AC servicing", amount: 4200 },
-    { id: uid(), date: d(3, 4), category: "Utilities", description: "Common area DEWA", amount: 3100 },
-    { id: uid(), date: d(5, 20), category: "Repairs", description: "Plumbing 201", amount: 1800 },
-    { id: uid(), date: d(7, 9), category: "Management", description: "Agency fee", amount: 9500 },
-    { id: uid(), date: d(9, 2), category: "Maintenance", description: "Lift AMC", amount: 6400 },
-  ];
-  return { units, tenants, cheques, expenses };
-};
-
-const KEY = "rems.data.v1";
-
 type Ctx = {
   data: Data;
-  addTenant: (t: Omit<Tenant, "id">) => void;
-  updateTenant: (id: string, t: Omit<Tenant, "id">) => void;
-  deleteTenant: (id: string) => void;
-  addCheque: (c: Omit<Cheque, "id">) => void;
-  updateCheque: (id: string, c: Omit<Cheque, "id">) => void;
-  deleteCheque: (id: string) => void;
-  toggleReconciled: (id: string) => void;
-  addExpense: (e: Omit<Expense, "id">) => void;
-  deleteExpense: (id: string) => void;
+  loading: boolean;
+  addTenant: (t: Omit<Tenant, "id">) => Promise<void>;
+  updateTenant: (id: string, t: Omit<Tenant, "id">) => Promise<void>;
+  deleteTenant: (id: string) => Promise<void>;
+  addCheque: (c: Omit<Cheque, "id">) => Promise<void>;
+  updateCheque: (id: string, c: Omit<Cheque, "id">) => Promise<void>;
+  deleteCheque: (id: string) => Promise<void>;
+  toggleReconciled: (id: string) => Promise<void>;
+  addExpense: (e: Omit<Expense, "id">) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  refresh: () => Promise<void>;
   reset: () => void;
 };
 
 const StoreContext = createContext<Ctx | null>(null);
 
+const mapUnit = (r: any): Unit => ({
+  id: r.id,
+  flatNo: r.flat_no,
+  building: r.building || "",
+  type: r.type || "",
+  marketRent: Number(r.market_rent) || 0,
+});
+
+const mapTenant = (r: any): Tenant => ({
+  id: r.id,
+  name: r.name,
+  phone: r.phone || "",
+  flatNo: r.flat_no || "",
+  contractStart: r.contract_start || "",
+  contractEnd: r.contract_end || "",
+  rentAmount: Number(r.rent_amount) || 0,
+  status: r.status || "Active",
+});
+
+const mapCheque = (r: any): Cheque => ({
+  id: r.id,
+  tenantId: r.tenant_id,
+  chequeDate: r.cheque_date || "",
+  chequeNo: r.cheque_no || "",
+  bank: r.bank || "",
+  amount: Number(r.amount) || 0,
+  status: r.status || "PDC",
+  reconciled: r.reconciled || false,
+});
+
+const mapExpense = (r: any): Expense => ({
+  id: r.id,
+  date: r.date || "",
+  category: r.category || "",
+  description: r.description || "",
+  amount: Number(r.amount) || 0,
+});
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Data>(() => seed());
+  const [data, setData] = useState<Data>({ units: [], tenants: [], cheques: [], expenses: [] });
+  const [loading, setLoading] = useState(true);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [unitsRes, tenantsRes, chequesRes, expensesRes] = await Promise.all([
+        supabase.from("units").select("*").order("flat_no"),
+        supabase.from("tenants").select("*").order("name"),
+        supabase.from("cheques").select("*").order("cheque_date"),
+        supabase.from("expenses").select("*").order("date"),
+      ]);
+
+      setData({
+        units: (unitsRes.data || []).map(mapUnit),
+        tenants: (tenantsRes.data || []).map(mapTenant),
+        cheques: (chequesRes.data || []).map(mapCheque),
+        expenses: (expensesRes.data || []).map(mapExpense),
+      });
+    } catch (err) {
+      console.error("Failed to load data", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setData(JSON.parse(raw) as Data);
-    } catch {
-      /* ignore */
-    }
+    refresh();
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(data));
-    } catch {
-      /* ignore */
-    }
-  }, [data]);
 
   const value = useMemo<Ctx>(
     () => ({
       data,
-      addTenant: (t) => setData((p) => ({ ...p, tenants: [...p.tenants, { ...t, id: uid() }] })),
-      updateTenant: (id, t) =>
-        setData((p) => ({ ...p, tenants: p.tenants.map((x) => (x.id === id ? { ...t, id } : x)) })),
-      deleteTenant: (id) =>
+      loading,
+      refresh,
+
+      addTenant: async (t) => {
+        const { data: row, error } = await supabase
+          .from("tenants")
+          .insert({
+            name: t.name,
+            phone: t.phone,
+            flat_no: t.flatNo,
+            contract_start: t.contractStart || null,
+            contract_end: t.contractEnd || null,
+            rent_amount: t.rentAmount,
+            status: t.status,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        if (row) setData((p) => ({ ...p, tenants: [...p.tenants, mapTenant(row)] }));
+      },
+
+      updateTenant: async (id, t) => {
+        const { error } = await supabase
+          .from("tenants")
+          .update({
+            name: t.name,
+            phone: t.phone,
+            flat_no: t.flatNo,
+            contract_start: t.contractStart || null,
+            contract_end: t.contractEnd || null,
+            rent_amount: t.rentAmount,
+            status: t.status,
+          })
+          .eq("id", id);
+        if (error) throw error;
+        setData((p) => ({
+          ...p,
+          tenants: p.tenants.map((x) => (x.id === id ? { ...t, id } : x)),
+        }));
+      },
+
+      deleteTenant: async (id) => {
+        const { error } = await supabase.from("tenants").delete().eq("id", id);
+        if (error) throw error;
         setData((p) => ({
           ...p,
           tenants: p.tenants.filter((x) => x.id !== id),
           cheques: p.cheques.filter((c) => c.tenantId !== id),
-        })),
-      addCheque: (c) => setData((p) => ({ ...p, cheques: [...p.cheques, { ...c, id: uid() }] })),
-      updateCheque: (id, c) =>
-        setData((p) => ({ ...p, cheques: p.cheques.map((x) => (x.id === id ? { ...c, id } : x)) })),
-      deleteCheque: (id) => setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) })),
-      toggleReconciled: (id) =>
+        }));
+      },
+
+      addCheque: async (c) => {
+        const { data: row, error } = await supabase
+          .from("cheques")
+          .insert({
+            tenant_id: c.tenantId,
+            cheque_date: c.chequeDate || null,
+            cheque_no: c.chequeNo,
+            bank: c.bank,
+            amount: c.amount,
+            status: c.status,
+            reconciled: c.reconciled || false,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        if (row) setData((p) => ({ ...p, cheques: [...p.cheques, mapCheque(row)] }));
+      },
+
+      updateCheque: async (id, c) => {
+        const { error } = await supabase
+          .from("cheques")
+          .update({
+            tenant_id: c.tenantId,
+            cheque_date: c.chequeDate || null,
+            cheque_no: c.chequeNo,
+            bank: c.bank,
+            amount: c.amount,
+            status: c.status,
+            reconciled: c.reconciled || false,
+          })
+          .eq("id", id);
+        if (error) throw error;
         setData((p) => ({
           ...p,
-          cheques: p.cheques.map((x) => (x.id === id ? { ...x, reconciled: !x.reconciled } : x)),
-        })),
-      addExpense: (e) => setData((p) => ({ ...p, expenses: [...p.expenses, { ...e, id: uid() }] })),
-      deleteExpense: (id) => setData((p) => ({ ...p, expenses: p.expenses.filter((x) => x.id !== id) })),
-      reset: () => setData(seed()),
+          cheques: p.cheques.map((x) => (x.id === id ? { ...c, id } : x)),
+        }));
+      },
+
+      deleteCheque: async (id) => {
+        const { error } = await supabase.from("cheques").delete().eq("id", id);
+        if (error) throw error;
+        setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
+      },
+
+      toggleReconciled: async (id) => {
+        const current = data.cheques.find((x) => x.id === id);
+        if (!current) return;
+        const newVal = !current.reconciled;
+        const { error } = await supabase.from("cheques").update({ reconciled: newVal }).eq("id", id);
+        if (error) throw error;
+        setData((p) => ({
+          ...p,
+          cheques: p.cheques.map((x) => (x.id === id ? { ...x, reconciled: newVal } : x)),
+        }));
+      },
+
+      addExpense: async (e) => {
+        const { data: row, error } = await supabase
+          .from("expenses")
+          .insert({
+            date: e.date || null,
+            category: e.category,
+            description: e.description,
+            amount: e.amount,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        if (row) setData((p) => ({ ...p, expenses: [...p.expenses, mapExpense(row)] }));
+      },
+
+      deleteExpense: async (id) => {
+        const { error } = await supabase.from("expenses").delete().eq("id", id);
+        if (error) throw error;
+        setData((p) => ({ ...p, expenses: p.expenses.filter((x) => x.id !== id) }));
+      },
+
+      reset: () => setData({ units: [], tenants: [], cheques: [], expenses: [] }),
     }),
-    [data],
+    [data, loading],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
