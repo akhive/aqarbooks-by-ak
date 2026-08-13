@@ -12,15 +12,16 @@ export type Unit = {
   marketRent: number;
 };
 
-export type Tenant = {
+export type Cheque = {
   id: string;
-  name: string;
-  phone: string;
-  flatNo: string;
-  contractStart: string;
-  contractEnd: string;
-  rentAmount: number;
-  status: TenantStatus;
+  tenantId: string;
+  chequeDate: string;
+  chequeNo: string;
+  bank: string;
+  amount: number;
+  status: ChequeStatus;
+  reconciled?: boolean;
+  clearedDate?: string;
 };
 
 export type Cheque = {
@@ -95,6 +96,7 @@ const mapCheque = (r: any): Cheque => ({
   amount: Number(r.amount) || 0,
   status: r.status || "PDC",
   reconciled: r.reconciled || false,
+  clearedDate: r.cleared_date || "",
 });
 
 const mapExpense = (r: any): Expense => ({
@@ -194,6 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { data: row, error } = await supabase
           .from("cheques")
           .insert({
+            cleared_date: c.clearedDate || null,
             tenant_id: c.tenantId,
             cheque_date: c.chequeDate || null,
             cheque_no: c.chequeNo,
@@ -212,6 +215,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase
           .from("cheques")
           .update({
+            cleared_date: c.clearedDate || null,
             tenant_id: c.tenantId,
             cheque_date: c.chequeDate || null,
             cheque_no: c.chequeNo,
