@@ -21,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="leading-tight">
               <span className="block text-base font-semibold tracking-tight">Aqar Books</span>
-              <span className="block text-xs text-muted-foreground">Rentals, PDCs & reporting</span>
+              <span className="block text-xs text-muted-foreground">Built by AK</span>
             </span>
           </Link>
           <nav className="-mx-1 flex gap-1 overflow-x-auto">
