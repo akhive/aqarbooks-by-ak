@@ -65,8 +65,6 @@ function ReportActions({
         <Printer className="mr-2 h-4 w-4" />
         Print / PDF
       </Button>
-      {/* hidden print meta for CSS header */}
-      <span className="hidden" data-report-title={title} data-report-period={period || ""} />
     </div>
   );
 }
@@ -80,6 +78,11 @@ function ReportsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
+  // Sorting state (inside component)
+  const [leaseSort, setLeaseSort] = useState<"asc" | "desc">("asc");
+  const [incomeSort, setIncomeSort] = useState<"asc" | "desc">("asc");
+  const [pdcSort, setPdcSort] = useState<"asc" | "desc">("asc");
+
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
   const unitLabel = (id: string) => {
     const u = data.units.find((x) => x.id === id);
@@ -89,21 +92,27 @@ function ReportsPage() {
   const periodLabel =
     from || to ? `${from ? fmtDate(from) : "…"} → ${to ? fmtDate(to) : "…"}` : "All periods";
 
-  // ---- Lease report (period filter on contract overlap) ----
+  // Lease report
   const leaseRows = useMemo(() => {
-    return data.contracts
-      .filter((c) => {
-        if (from && c.endDate < from) return false;
-        if (to && c.startDate > to) return false;
-        return true;
-      })
-      .sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [data.contracts, from, to]);
+    const rows = data.contracts.filter((c) => {
+      if (from && c.endDate < from) return false;
+      if (to && c.startDate > to) return false;
+      return true;
+    });
+    return rows.sort((a, b) => {
+      const an = a.leaseNo || "";
+      const bn = b.leaseNo || "";
+      return leaseSort === "asc"
+        ? an.localeCompare(bn, undefined, { numeric: true })
+        : bn.localeCompare(an, undefined, { numeric: true });
+    });
+  }, [data.contracts, from, to, leaseSort]);
+
   const leaseTotal = leaseRows.reduce((s, c) => s + c.rent, 0);
 
-  // ---- Income breakdown ----
+  // Income breakdown
   const incomeRows = useMemo(() => {
-    return data.contracts
+    const rows = data.contracts
       .filter((c) => {
         if (from && c.endDate < from) return false;
         if (to && c.startDate > to) return false;
@@ -119,7 +128,14 @@ function ReportsPage() {
         });
         return { ...c, previous, current, deferred, total: c.rent };
       });
-  }, [data.contracts, year, prevYear, from, to]);
+    return rows.sort((a, b) => {
+      const an = a.leaseNo || "";
+      const bn = b.leaseNo || "";
+      return incomeSort === "asc"
+        ? an.localeCompare(bn, undefined, { numeric: true })
+        : bn.localeCompare(an, undefined, { numeric: true });
+    });
+  }, [data.contracts, year, prevYear, from, to, incomeSort]);
 
   const incomeTotals = useMemo(
     () =>
@@ -135,19 +151,22 @@ function ReportsPage() {
     [incomeRows],
   );
 
-  // ---- PDCs ----
+  // Upcoming PDCs
   const upcoming = useMemo(() => {
-    return data.cheques
-      .filter((c) => {
-        if (c.status !== "PDC") return false;
-        if (from && c.chequeDate < from) return false;
-        if (to && c.chequeDate > to) return false;
-        return true;
-      })
-      .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate));
-  }, [data.cheques, from, to]);
+    const rows = data.cheques.filter((c) => {
+      if (c.status !== "PDC") return false;
+      if (from && c.chequeDate < from) return false;
+      if (to && c.chequeDate > to) return false;
+      return true;
+    });
+    return rows.sort((a, b) =>
+      pdcSort === "asc"
+        ? a.chequeDate.localeCompare(b.chequeDate)
+        : b.chequeDate.localeCompare(a.chequeDate),
+    );
+  }, [data.cheques, from, to, pdcSort]);
 
-  // ---- Yearly profit ----
+  // Yearly profit
   const yearly = useMemo(() => {
     const map = new Map<number, { income: number; expense: number }>();
     data.contracts.forEach((c) => {
@@ -173,7 +192,7 @@ function ReportsPage() {
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [data.contracts, data.expenses, from, to]);
 
-  // ---- Renewals ----
+  // Renewals
   const renewals = useMemo(
     () =>
       data.contracts
@@ -188,7 +207,7 @@ function ReportsPage() {
     [data.contracts, from, to],
   );
 
-  // ---- Vacant ----
+  // Vacant
   const vacant = useMemo(() => {
     const occupiedUnitIds = new Set(
       data.contracts
@@ -208,7 +227,7 @@ function ReportsPage() {
             AK
           </div>
           <div>
-            <h1 className="text-xl font-bold print-title">Report</h1>
+            <h1 className="text-xl font-bold">Report</h1>
             <p className="text-sm text-muted-foreground">Period: {periodLabel}</p>
             <p className="text-xs text-muted-foreground">Aqar Books — Built by AK</p>
           </div>
@@ -216,7 +235,10 @@ function ReportsPage() {
       </div>
 
       <div className="no-print">
-        <PageHeader title="Reports" description="All reports with period filter, Excel export and Print/PDF" />
+        <PageHeader
+          title="Reports"
+          description="All reports with period filter, sorting, Excel export and Print/PDF"
+        />
       </div>
 
       {/* Global period filter */}
@@ -288,7 +310,15 @@ function ReportsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Lease No</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 font-medium hover:underline"
+                        onClick={() => setLeaseSort((s) => (s === "asc" ? "desc" : "asc"))}
+                      >
+                        Lease No {leaseSort === "asc" ? "↑" : "↓"}
+                      </button>
+                    </TableHead>
                     <TableHead>Tenant</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>Start</TableHead>
@@ -359,7 +389,15 @@ function ReportsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Lease No</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 font-medium hover:underline"
+                        onClick={() => setIncomeSort((s) => (s === "asc" ? "desc" : "asc"))}
+                      >
+                        Lease No {incomeSort === "asc" ? "↑" : "↓"}
+                      </button>
+                    </TableHead>
                     <TableHead>Tenant</TableHead>
                     <TableHead>Period</TableHead>
                     <TableHead className="text-right">Total Rent</TableHead>
@@ -381,7 +419,9 @@ function ReportsPage() {
                       <TableCell className="text-right text-emerald-600 font-medium">
                         {currency(r.current)}
                       </TableCell>
-                      <TableCell className="text-right text-amber-600">{currency(r.deferred)}</TableCell>
+                      <TableCell className="text-right text-amber-600">
+                        {currency(r.deferred)}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {incomeRows.length > 0 && (
@@ -410,7 +450,8 @@ function ReportsPage() {
               <div>
                 <CardTitle className="text-base">Upcoming PDCs</CardTitle>
                 <CardDescription>
-                  {upcoming.length} cheque(s) · {currency(upcoming.reduce((s, c) => s + c.amount, 0))}
+                  {upcoming.length} cheque(s) ·{" "}
+                  {currency(upcoming.reduce((s, c) => s + c.amount, 0))}
                 </CardDescription>
               </div>
               <ReportActions
@@ -436,7 +477,15 @@ function ReportsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 font-medium hover:underline"
+                        onClick={() => setPdcSort((s) => (s === "asc" ? "desc" : "asc"))}
+                      >
+                        Date {pdcSort === "asc" ? "↑" : "↓"}
+                      </button>
+                    </TableHead>
                     <TableHead>Tenant</TableHead>
                     <TableHead>Cheque no.</TableHead>
                     <TableHead>Bank</TableHead>
