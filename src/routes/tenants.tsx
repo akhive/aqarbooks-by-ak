@@ -4,33 +4,22 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, fmtDate, useStore, type Tenant, type TenantStatus } from "@/lib/store";
+import { fmtDate, useStore, type Tenant } from "@/lib/store";
 
 export const Route = createFileRoute("/tenants")({
   head: () => ({
-    meta: [
-      { title: "Tenants — Estate Manager" },
-      {
-        name: "description",
-        content: "Add, edit and remove tenants with flat number, contract dates, rent amount and status.",
-      },
-      { property: "og:title", content: "Tenants — Estate Manager" },
-      { property: "og:description", content: "Manage tenant contracts, rent amounts and lease status." },
-    ],
+    meta: [{ title: "Tenants — Estate Manager" }],
   }),
   component: TenantsPage,
 });
@@ -39,16 +28,11 @@ type Form = Omit<Tenant, "id">;
 
 const empty: Form = {
   name: "",
-  phone: "",
-  flatNo: "",
-  contractStart: "",
-  contractEnd: "",
-  rentAmount: 0,
-  status: "Active",
+  mobile: "",
+  email: "",
+  nationality: "",
+  fromDate: "",
 };
-
-const statusVariant = (s: TenantStatus) =>
-  s === "Active" ? "bg-success/12 text-success" : s === "Notice" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground";
 
 function TenantsPage() {
   const { data, addTenant, updateTenant, deleteTenant } = useStore();
@@ -72,30 +56,42 @@ function TenantsPage() {
     setOpen(true);
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.flatNo.trim()) return setError("Name and flat number are required.");
-    if (!form.contractStart || !form.contractEnd) return setError("Contract start and end dates are required.");
-    if (form.contractEnd < form.contractStart) return setError("Contract end must be after the start date.");
-    if (form.rentAmount <= 0) return setError("Rent amount must be greater than zero.");
-    if (editing) {
-      updateTenant(editing, form);
-      toast.success("Tenant updated");
-    } else {
-      addTenant(form);
-      toast.success("Tenant added");
+    if (!form.name.trim()) return setError("Tenant name is required.");
+    try {
+      if (editing) {
+        await updateTenant(editing, form);
+        toast.success("Tenant updated");
+      } else {
+        await addTenant(form);
+        toast.success("Tenant added");
+      }
+      setOpen(false);
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
     }
-    setOpen(false);
+  };
+
+  const remove = async (id: string, name: string) => {
+    if (!confirm(`Delete tenant "${name}"? This will also remove their contracts and cheques.`)) return;
+    try {
+      await deleteTenant(id);
+      toast.success("Tenant deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete");
+    }
   };
 
   return (
     <AppShell>
       <PageHeader
         title="Tenants"
-        description="Contracts, rent and lease status for every occupant."
+        description={`${data.tenants.length} tenant(s)`}
         action={
           <Button onClick={startAdd}>
-            <Plus className="size-4" /> Add tenant
+            <Plus className="mr-2 h-4 w-4" />
+            Add Tenant
           </Button>
         }
       />
@@ -105,164 +101,105 @@ function TenantsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Flat</TableHead>
-                <TableHead>Contract</TableHead>
-                <TableHead className="text-right">Rent / year</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Mobile</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Nationality</TableHead>
+                <TableHead>With us from</TableHead>
+                <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.tenants.length === 0 ? (
+              {data.tenants.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                    No tenants yet — add your first one.
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                    No tenants yet. Click “Add Tenant” to start.
                   </TableCell>
                 </TableRow>
-              ) : (
-                data.tenants.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell>
-                      <p className="font-medium">{t.name}</p>
-                      <p className="text-xs text-muted-foreground">{t.phone || "No phone"}</p>
-                    </TableCell>
-                    <TableCell>{t.flatNo}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {fmtDate(t.contractStart)} → {fmtDate(t.contractEnd)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">{currency(t.rentAmount)}</TableCell>
-                    <TableCell>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusVariant(t.status)}`}>
-                        {t.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => startEdit(t)} aria-label="Edit tenant">
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Delete tenant"
-                        onClick={() => {
-                          deleteTenant(t.id);
-                          toast.success("Tenant deleted");
-                        }}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
               )}
+              {data.tenants.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-medium">{t.name}</TableCell>
+                  <TableCell>{t.mobile || "—"}</TableCell>
+                  <TableCell>{t.email || "—"}</TableCell>
+                  <TableCell>{t.nationality || "—"}</TableCell>
+                  <TableCell>{fmtDate(t.fromDate)}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" onClick={() => startEdit(t)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => remove(t.id, t.name)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit tenant" : "Add tenant"}</DialogTitle>
-            <DialogDescription>Contract details are used for renewal reminders.</DialogDescription>
+            <DialogTitle>{editing ? "Edit Tenant" : "Add Tenant"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="name">Tenant name</Label>
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <Label>Tenant Name *</Label>
               <Input
-                id="name"
-                maxLength={100}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Full name"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="phone">Phone</Label>
+            <div>
+              <Label>Mobile</Label>
               <Input
-                id="phone"
-                maxLength={30}
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                value={form.mobile}
+                onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+                placeholder="+971 50 000 0000"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="flat">Flat no.</Label>
-              <Select value={form.flatNo} onValueChange={(v) => setForm({ ...form, flatNo: v })}>
-                <SelectTrigger id="flat">
-                  <SelectValue placeholder="Select unit" />
-                </SelectTrigger>
-                <SelectContent>
-                  {data.units.map((u) => (
-                    <SelectItem key={u.id} value={u.flatNo}>
-                      {u.flatNo} · {u.building}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="start">Contract start</Label>
+            <div>
+              <Label>Email</Label>
               <Input
-                id="start"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="email@example.com"
+              />
+            </div>
+            <div>
+              <Label>Nationality</Label>
+              <Input
+                value={form.nationality}
+                onChange={(e) => setForm({ ...form, nationality: e.target.value })}
+                placeholder="e.g. Indian, Emirati"
+              />
+            </div>
+            <div>
+              <Label>With us from</Label>
+              <Input
                 type="date"
-                value={form.contractStart}
-                onChange={(e) => setForm({ ...form, contractStart: e.target.value })}
+                value={form.fromDate}
+                onChange={(e) => setForm({ ...form, fromDate: e.target.value })}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="end">Contract end</Label>
-              <Input
-                id="end"
-                type="date"
-                value={form.contractEnd}
-                onChange={(e) => setForm({ ...form, contractEnd: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="rent">Rent amount (per year)</Label>
-              <Input
-                id="rent"
-                type="number"
-                min={0}
-                value={form.rentAmount || ""}
-                onChange={(e) => setForm({ ...form, rentAmount: Number(e.target.value) })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="status">Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) => setForm({ ...form, status: v as TenantStatus })}
-              >
-                <SelectTrigger id="status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(["Active", "Notice", "Expired"] as const).map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {error ? <p className="text-sm text-destructive sm:col-span-2">{error}</p> : null}
-            <DialogFooter className="sm:col-span-2">
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editing ? "Save changes" : "Add tenant"}</Button>
+              <Button type="submit">{editing ? "Save Changes" : "Add Tenant"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-
-      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="secondary">Tip</Badge>
-        <span>Deleting a tenant also removes their cheques.</span>
-      </div>
-
     </AppShell>
   );
 }
