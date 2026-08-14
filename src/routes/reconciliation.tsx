@@ -18,6 +18,20 @@ export const Route = createFileRoute("/reconciliation")({
   component: ReconciliationPage,
 });
 
+type Row = {
+  id: string;
+  date: string;
+  particular: string;
+  type: "Cheque" | "Expense";
+  chequeNo?: string;
+  bank?: string;
+  status?: string;
+  clearedDate?: string;
+  deposit: number;
+  withdrawal: number;
+  ref: any;
+};
+
 function ReconciliationPage() {
   const { data, updateCheque } = useStore();
 
@@ -36,7 +50,7 @@ function ReconciliationPage() {
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
-  // Load saved opening balance when period changes
+  // Load saved balance for this period (or previous closing)
   useEffect(() => {
     const load = async () => {
       if (!from || !to) return;
@@ -52,7 +66,6 @@ function ReconciliationPage() {
         if (row) {
           setOpeningBalance(Number(row.opening_balance) || 0);
         } else {
-          // Try to get previous period closing balance as opening
           const { data: prev } = await supabase
             .from("bank_reconciliations")
             .select("*")
@@ -60,12 +73,7 @@ function ReconciliationPage() {
             .order("period_to", { ascending: false })
             .limit(1)
             .maybeSingle();
-
-          if (prev) {
-            setOpeningBalance(Number(prev.closing_balance) || 0);
-          } else {
-            setOpeningBalance(0);
-          }
+          setOpeningBalance(prev ? Number(prev.closing_balance) || 0 : 0);
         }
       } catch (e) {
         console.error(e);
@@ -76,8 +84,8 @@ function ReconciliationPage() {
     load();
   }, [from, to]);
 
-  const rows = useMemo(() => {
-    const chequeRows = data.cheques
+  const rows: Row[] = useMemo(() => {
+    const chequeRows: Row[] = data.cheques
       .filter((c) => c.chequeDate && c.chequeDate >= from && c.chequeDate <= to)
       .map((c) => ({
         id: c.id,
@@ -87,61 +95,84 @@ function ReconciliationPage() {
         chequeNo: c.chequeNo,
         bank: c.bank,
         status: c.status,
+        clearedDate: c.clearedDate,
         deposit: c.amount,
         withdrawal: 0,
+        ref: c,
       }));
 
-    const expenseRows = data.expenses
+    const expenseRows: Row[] = data.expenses
       .filter((e) => e.date && e.date >= from && e.date <= to)
       .map((e) => ({
         id: e.id,
         date: e.date,
         particular: e.description || e.category,
         type: "Expense" as const,
-        chequeNo: "",
-        bank: "",
         status: "—",
         deposit: 0,
         withdrawal: e.amount,
+        ref: e,
       }));
 
-    return [...chequeRows, ...expenseRows].sort((a, b) => (a.date > b.date ? 1 : -1));
-  }, [data.cheques, data.expenses, from, to]);
-
-  const totalDeposit = rows.reduce((s, r) => s + r.deposit, 0);
-  const totalWithdrawal = rows.reduce((s, r) => s + r.withdrawal, 0);
-  const closingBalance = openingBalance + totalDeposit - totalWithdrawal;
-
-  const selectedCheques = Object.entries(selected)
-    .filter(([, v]) => v)
-    .map(([id]) => id);
+    return [...chequeRows, ...expenseRows].sort((a, b) => a.date.localeCompare(b.date));
+  }, [data.cheques, data.expenses, data.tenants, from, to]);
 
   const toggle = (id: string) => setSelected((p) => ({ ...p, [id]: !p[id] }));
 
+  const toggleAllPendingCheques = () => {
+    const pending = rows.filter((r) => r.type === "Cheque" && r.status !== "Cleared");
+    const allSelected = pending.every((r) => selected[r.id]);
+    if (allSelected) {
+      setSelected({});
+    } else {
+      const next: Record<string, boolean> = {};
+      pending.forEach((r) => (next[r.id] = true));
+      setSelected(next);
+    }
+  };
+
+  const selectedCheques = rows.filter((r) => r.type === "Cheque" && selected[r.id]);
+  const selectedTotal = selectedCheques.reduce((s, r) => s + r.deposit, 0);
+
+  const totalDeposit = rows.reduce((s, r) => s + r.deposit, 0);
+  const totalWithdrawal = rows.reduce((s, r) => s + r.withdrawal, 0);
+  const clearedDeposit = rows
+    .filter((r) => r.type === "Cheque" && r.status === "Cleared")
+    .reduce((s, r) => s + r.deposit, 0);
+  const availableOnlyInBooks = totalDeposit - clearedDeposit;
+  const expectedBankBalance = openingBalance + clearedDeposit - totalWithdrawal;
+  const balanceAsPerBooks = openingBalance + totalDeposit - totalWithdrawal;
+
   const markCleared = async () => {
-    if (selectedCheques.length === 0) return;
+    if (selectedCheques.length === 0) {
+      toast.error("Select at least one cheque");
+      return;
+    }
+    if (!clearedDate) {
+      toast.error("Enter Bank Clearance Date");
+      return;
+    }
     setSaving(true);
     try {
-      for (const id of selectedCheques) {
-        const c = data.cheques.find((x) => x.id === id);
-        if (!c) continue;
-        await updateCheque(id, {
+      for (const row of selectedCheques) {
+        const c = row.ref;
+        await updateCheque(c.id, {
           ...c,
           status: "Cleared",
-          clearedDate,
           reconciled: true,
+          clearedDate,
         });
       }
-      toast.success(`${selectedCheques.length} cheque(s) marked cleared`);
+      toast.success(`${selectedCheques.length} cheque(s) cleared`);
       setSelected({});
-    } catch (e: any) {
-      toast.error(e.message || "Failed");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update");
     } finally {
       setSaving(false);
     }
   };
 
-  // SAVE reconciliation statement
   const saveReconciliation = async () => {
     setSaving(true);
     try {
@@ -150,13 +181,13 @@ function ReconciliationPage() {
           period_from: from,
           period_to: to,
           opening_balance: openingBalance,
-          closing_balance: closingBalance,
+          closing_balance: expectedBankBalance,
           saved_at: new Date().toISOString(),
         },
         { onConflict: "period_from,period_to" }
       );
       if (error) throw error;
-      toast.success("Reconciliation saved. Next time this period will load the same balance.");
+      toast.success("Statement saved. Balance will be remembered for this period.");
     } catch (e: any) {
       toast.error(e.message || "Failed to save");
     } finally {
@@ -164,14 +195,11 @@ function ReconciliationPage() {
     }
   };
 
-  // PRINT with fixed header format
-  const printPDF = () => {
-    window.print();
-  };
+  const printPDF = () => window.print();
 
   return (
     <AppShell>
-      {/* PRINT HEADER - only visible when printing */}
+      {/* Print header */}
       <div className="print-only hidden print:block mb-6 border-b pb-4">
         <div className="flex items-start gap-4">
           <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
@@ -190,7 +218,7 @@ function ReconciliationPage() {
       <div className="no-print">
         <PageHeader
           title="Bank Reconciliation"
-          description="Save balances month by month · Print statement"
+          description="Period search · Deposits (Income) · Withdrawals (Expense) · Bank clearance"
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={printPDF}>
@@ -223,108 +251,162 @@ function ReconciliationPage() {
               type="number"
               value={openingBalance || ""}
               onChange={(e) => setOpeningBalance(Number(e.target.value) || 0)}
+              placeholder="0"
             />
           </div>
         </CardContent>
       </Card>
 
-      {/* Clearance */}
+      {/* Clearance Action */}
       <Card className="mb-6 no-print">
         <CardContent className="flex flex-wrap items-end gap-4 p-4">
           <div className="space-y-1.5">
-            <Label>Bank Clearance Date</Label>
+            <Label>Bank Clearance Date (as per bank statement)</Label>
             <Input type="date" value={clearedDate} onChange={(e) => setClearedDate(e.target.value)} />
           </div>
           <Button onClick={markCleared} disabled={saving || selectedCheques.length === 0}>
-            {saving ? "Saving..." : `Mark ${selectedCheques.length} Cleared`}
+            {saving ? "Saving..." : `Mark ${selectedCheques.length} Cheque(s) Cleared`}
           </Button>
         </CardContent>
       </Card>
 
-      {/* Summary */}
+      {/* Summary — original cards kept */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Opening Balance</p>
-            <p className="text-lg font-semibold">{currency(openingBalance)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Deposit</p>
+            <p className="text-xs text-muted-foreground">Total Deposit (Income)</p>
             <p className="text-lg font-semibold text-green-600">{currency(totalDeposit)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Withdrawal</p>
+            <p className="text-xs text-muted-foreground">Total Withdrawal (Expense)</p>
             <p className="text-lg font-semibold text-red-600">{currency(totalWithdrawal)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Closing Balance</p>
-            <p className="text-lg font-semibold text-primary">{currency(closingBalance)}</p>
+            <p className="text-xs text-muted-foreground">Available Only in Books</p>
+            <p className="text-lg font-semibold text-amber-600">{currency(availableOnlyInBooks)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Expected Bank Balance</p>
+            <p className="text-lg font-semibold text-primary">{currency(expectedBankBalance)}</p>
+            <p className="text-xs text-muted-foreground">as on {fmtDate(to)}</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Table */}
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
+        <CardContent className="p-0">
+          <div className="border-b px-4 py-3 text-sm font-medium">
+            Transactions from {fmtDate(from)} to {fmtDate(to)} ({rows.length} entries)
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="no-print w-10"></TableHead>
+                <TableHead className="no-print w-10">
+                  <input type="checkbox" onChange={toggleAllPendingCheques} title="Select all pending" />
+                </TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Particular</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Cheque No</TableHead>
                 <TableHead>Bank</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Cleared Date</TableHead>
                 <TableHead className="text-right">Deposit</TableHead>
                 <TableHead className="text-right">Withdrawal</TableHead>
-                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 && (
+              {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                     No transactions in this period.
                   </TableCell>
                 </TableRow>
+              ) : (
+                rows.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="no-print">
+                      {r.type === "Cheque" && r.status !== "Cleared" && (
+                        <input
+                          type="checkbox"
+                          checked={!!selected[r.id]}
+                          onChange={() => toggle(r.id)}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell>{fmtDate(r.date)}</TableCell>
+                    <TableCell className="font-medium">{r.particular}</TableCell>
+                    <TableCell>{r.type}</TableCell>
+                    <TableCell>{r.chequeNo || "—"}</TableCell>
+                    <TableCell>{r.bank || "—"}</TableCell>
+                    <TableCell>
+                      {r.type === "Cheque" ? (
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                            r.status === "Cleared"
+                              ? "bg-success/12 text-success"
+                              : "bg-warning/15 text-warning"
+                          }`}
+                        >
+                          {r.status}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>{r.clearedDate ? fmtDate(r.clearedDate) : "—"}</TableCell>
+                    <TableCell className="text-right text-green-700">
+                      {r.deposit ? currency(r.deposit) : ""}
+                    </TableCell>
+                    <TableCell className="text-right text-red-600">
+                      {r.withdrawal ? currency(r.withdrawal) : ""}
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
-              {rows.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="no-print">
-                    {r.type === "Cheque" && (
-                      <input
-                        type="checkbox"
-                        checked={!!selected[r.id]}
-                        onChange={() => toggle(r.id)}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell>{fmtDate(r.date)}</TableCell>
-                  <TableCell className="font-medium">{r.particular}</TableCell>
-                  <TableCell>{r.type}</TableCell>
-                  <TableCell>{r.chequeNo || "—"}</TableCell>
-                  <TableCell>{r.bank || "—"}</TableCell>
-                  <TableCell className="text-right text-green-600">
-                    {r.deposit ? currency(r.deposit) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right text-red-600">
-                    {r.withdrawal ? currency(r.withdrawal) : "—"}
-                  </TableCell>
-                  <TableCell>{r.status}</TableCell>
-                </TableRow>
-              ))}
             </TableBody>
           </Table>
+
+          {/* Original tally-style footer kept */}
+          <div className="space-y-1.5 border-t bg-muted/20 px-4 py-4 text-sm">
+            <div className="flex justify-between no-print">
+              <span>Selected for clearance</span>
+              <strong>
+                {selectedCheques.length} cheque(s) — {currency(selectedTotal)}
+              </strong>
+            </div>
+            <div className="flex justify-between">
+              <span>Total Deposit (Income / Cheques)</span>
+              <strong className="text-green-700">{currency(totalDeposit)}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span>Total Withdrawal (Expenses)</span>
+              <strong className="text-red-600">{currency(totalWithdrawal)}</strong>
+            </div>
+            <div className="flex justify-between text-amber-700">
+              <span>Available Only in Books (Uncleared cheques)</span>
+              <strong>{currency(availableOnlyInBooks)}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span>Balance as per Books</span>
+              <strong>{currency(balanceAsPerBooks)}</strong>
+            </div>
+            <div className="mt-2 flex justify-between border-t pt-2 text-base">
+              <span>Expected Bank Balance as on {fmtDate(to)}</span>
+              <strong className="text-primary">{currency(expectedBankBalance)}</strong>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Print styles */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
