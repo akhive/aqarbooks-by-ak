@@ -14,7 +14,9 @@ export const Route = createFileRoute("/reports")({
   head: () => ({
     meta: [{ title: "Reports — Estate Manager" }],
   }),
-  component: ReportsPage,
+  component: ReportsPage, {const [leaseSort, setLeaseSort] = useState<"asc" | "desc">("asc");
+const [incomeSort, setIncomeSort] = useState<"asc" | "desc">("asc");
+const [pdcSort, setPdcSort] = useState<"asc" | "desc">("asc");
 });
 
 function splitByYear(startDate: string, endDate: string, rent: number) {
