@@ -1,37 +1,47 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { supabase } from "../supabase";
 
-export type TenantStatus = "Active" | "Expired" | "Notice";
-export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
-
 export type Unit = {
   id: string;
   flatNo: string;
   building: string;
-  type: string;
+  bedroomType: string;
   marketRent: number;
 };
 
-export type Cheque = {
+export type Tenant = {
   id: string;
-  tenantId: string;
-  chequeDate: string;
-  chequeNo: string;
-  bank: string;
-  amount: number;
-  status: ChequeStatus;
-  reconciled?: boolean;
-  clearedDate?: string;
+  name: string;
+  mobile: string;
+  email: string;
+  nationality: string;
+  fromDate: string;
 };
+
+export type Contract = {
+  id: string;
+  leaseNo: string;
+  tenantId: string;
+  unitId: string;
+  startDate: string;
+  endDate: string;
+  rent: number;
+  previousRent: number;
+  bedroomType: string;
+};
+
+export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
 
 export type Cheque = {
   id: string;
   tenantId: string;
+  contractId?: string;
   chequeDate: string;
   chequeNo: string;
   bank: string;
   amount: number;
   status: ChequeStatus;
+  clearedDate?: string;
   reconciled?: boolean;
 };
 
@@ -46,6 +56,7 @@ export type Expense = {
 type Data = {
   units: Unit[];
   tenants: Tenant[];
+  contracts: Contract[];
   cheques: Cheque[];
   expenses: Expense[];
 };
@@ -53,50 +64,62 @@ type Data = {
 type Ctx = {
   data: Data;
   loading: boolean;
+  refresh: () => Promise<void>;
   addTenant: (t: Omit<Tenant, "id">) => Promise<void>;
   updateTenant: (id: string, t: Omit<Tenant, "id">) => Promise<void>;
   deleteTenant: (id: string) => Promise<void>;
+  addContract: (c: Omit<Contract, "id">) => Promise<void>;
+  updateContract: (id: string, c: Omit<Contract, "id">) => Promise<void>;
+  deleteContract: (id: string) => Promise<void>;
   addCheque: (c: Omit<Cheque, "id">) => Promise<void>;
   updateCheque: (id: string, c: Omit<Cheque, "id">) => Promise<void>;
   deleteCheque: (id: string) => Promise<void>;
-  toggleReconciled: (id: string) => Promise<void>;
   addExpense: (e: Omit<Expense, "id">) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
-  refresh: () => Promise<void>;
-  reset: () => void;
 };
 
 const StoreContext = createContext<Ctx | null>(null);
 
 const mapUnit = (r: any): Unit => ({
   id: r.id,
-  flatNo: r.flat_no,
+  flatNo: r.flat_no || "",
   building: r.building || "",
-  type: r.type || "",
+  bedroomType: r.bedroom_type || "",
   marketRent: Number(r.market_rent) || 0,
 });
 
 const mapTenant = (r: any): Tenant => ({
   id: r.id,
-  name: r.name,
-  phone: r.phone || "",
-  flatNo: r.flat_no || "",
-  contractStart: r.contract_start || "",
-  contractEnd: r.contract_end || "",
-  rentAmount: Number(r.rent_amount) || 0,
-  status: r.status || "Active",
+  name: r.name || "",
+  mobile: r.mobile || "",
+  email: r.email || "",
+  nationality: r.nationality || "",
+  fromDate: r.from_date || "",
+});
+
+const mapContract = (r: any): Contract => ({
+  id: r.id,
+  leaseNo: r.lease_no || "",
+  tenantId: r.tenant_id || "",
+  unitId: r.unit_id || "",
+  startDate: r.start_date || "",
+  endDate: r.end_date || "",
+  rent: Number(r.rent) || 0,
+  previousRent: Number(r.previous_rent) || 0,
+  bedroomType: r.bedroom_type || "",
 });
 
 const mapCheque = (r: any): Cheque => ({
   id: r.id,
-  tenantId: r.tenant_id,
+  tenantId: r.tenant_id || "",
+  contractId: r.contract_id || "",
   chequeDate: r.cheque_date || "",
   chequeNo: r.cheque_no || "",
   bank: r.bank || "",
   amount: Number(r.amount) || 0,
   status: r.status || "PDC",
-  reconciled: r.reconciled || false,
   clearedDate: r.cleared_date || "",
+  reconciled: r.reconciled || false,
 });
 
 const mapExpense = (r: any): Expense => ({
@@ -107,16 +130,54 @@ const mapExpense = (r: any): Expense => ({
   amount: Number(r.amount) || 0,
 });
 
+/** Calculate Current Year Revenue + Deferred Revenue */
+export function calcRevenue(startDate: string, endDate: string, rent: number) {
+  if (!startDate || !endDate || !rent) return { currentYear: 0, deferred: 0 };
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const year = new Date().getFullYear();
+
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year, 11, 31);
+
+  const daily = rent / 365;
+
+  // days that fall inside current calendar year
+  const currentStart = start > yearStart ? start : yearStart;
+  const currentEnd = end < yearEnd ? end : yearEnd;
+
+  let currentDays = 0;
+  if (currentEnd >= currentStart) {
+    currentDays = Math.ceil((currentEnd.getTime() - currentStart.getTime()) / 86400000) + 1;
+  }
+
+  const totalDays = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
+  const deferredDays = Math.max(0, totalDays - currentDays);
+
+  return {
+    currentYear: Math.round(daily * currentDays),
+    deferred: Math.round(daily * deferredDays),
+  };
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Data>({ units: [], tenants: [], cheques: [], expenses: [] });
+  const [data, setData] = useState<Data>({
+    units: [],
+    tenants: [],
+    contracts: [],
+    cheques: [],
+    expenses: [],
+  });
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const [unitsRes, tenantsRes, chequesRes, expensesRes] = await Promise.all([
+      const [unitsRes, tenantsRes, contractsRes, chequesRes, expensesRes] = await Promise.all([
         supabase.from("units").select("*").order("flat_no"),
         supabase.from("tenants").select("*").order("name"),
+        supabase.from("contracts").select("*").order("start_date", { ascending: false }),
         supabase.from("cheques").select("*").order("cheque_date"),
         supabase.from("expenses").select("*").order("date"),
       ]);
@@ -124,6 +185,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setData({
         units: (unitsRes.data || []).map(mapUnit),
         tenants: (tenantsRes.data || []).map(mapTenant),
+        contracts: (contractsRes.data || []).map(mapContract),
         cheques: (chequesRes.data || []).map(mapCheque),
         expenses: (expensesRes.data || []).map(mapExpense),
       });
@@ -149,12 +211,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           .from("tenants")
           .insert({
             name: t.name,
-            phone: t.phone,
-            flat_no: t.flatNo,
-            contract_start: t.contractStart || null,
-            contract_end: t.contractEnd || null,
-            rent_amount: t.rentAmount,
-            status: t.status,
+            mobile: t.mobile,
+            email: t.email,
+            nationality: t.nationality,
+            from_date: t.fromDate || null,
           })
           .select()
           .single();
@@ -167,12 +227,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           .from("tenants")
           .update({
             name: t.name,
-            phone: t.phone,
-            flat_no: t.flatNo,
-            contract_start: t.contractStart || null,
-            contract_end: t.contractEnd || null,
-            rent_amount: t.rentAmount,
-            status: t.status,
+            mobile: t.mobile,
+            email: t.email,
+            nationality: t.nationality,
+            from_date: t.fromDate || null,
           })
           .eq("id", id);
         if (error) throw error;
@@ -188,7 +246,64 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setData((p) => ({
           ...p,
           tenants: p.tenants.filter((x) => x.id !== id),
+          contracts: p.contracts.filter((c) => c.tenantId !== id),
           cheques: p.cheques.filter((c) => c.tenantId !== id),
+        }));
+      },
+
+      addContract: async (c) => {
+        // Auto previous rent from last contract of same tenant
+        const last = data.contracts
+          .filter((x) => x.tenantId === c.tenantId)
+          .sort((a, b) => (a.startDate < b.startDate ? 1 : -1))[0];
+
+        const previousRent = last ? last.rent : 0;
+
+        const { data: row, error } = await supabase
+          .from("contracts")
+          .insert({
+            lease_no: c.leaseNo,
+            tenant_id: c.tenantId,
+            unit_id: c.unitId || null,
+            start_date: c.startDate,
+            end_date: c.endDate,
+            rent: c.rent,
+            previous_rent: previousRent,
+            bedroom_type: c.bedroomType,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        if (row) setData((p) => ({ ...p, contracts: [mapContract(row), ...p.contracts] }));
+      },
+
+      updateContract: async (id, c) => {
+        const { error } = await supabase
+          .from("contracts")
+          .update({
+            lease_no: c.leaseNo,
+            tenant_id: c.tenantId,
+            unit_id: c.unitId || null,
+            start_date: c.startDate,
+            end_date: c.endDate,
+            rent: c.rent,
+            previous_rent: c.previousRent,
+            bedroom_type: c.bedroomType,
+          })
+          .eq("id", id);
+        if (error) throw error;
+        setData((p) => ({
+          ...p,
+          contracts: p.contracts.map((x) => (x.id === id ? { ...c, id } : x)),
+        }));
+      },
+
+      deleteContract: async (id) => {
+        const { error } = await supabase.from("contracts").delete().eq("id", id);
+        if (error) throw error;
+        setData((p) => ({
+          ...p,
+          contracts: p.contracts.filter((x) => x.id !== id),
         }));
       },
 
@@ -196,13 +311,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { data: row, error } = await supabase
           .from("cheques")
           .insert({
-            cleared_date: c.clearedDate || null,
             tenant_id: c.tenantId,
+            contract_id: c.contractId || null,
             cheque_date: c.chequeDate || null,
             cheque_no: c.chequeNo,
             bank: c.bank,
             amount: c.amount,
             status: c.status,
+            cleared_date: c.clearedDate || null,
             reconciled: c.reconciled || false,
           })
           .select()
@@ -215,13 +331,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase
           .from("cheques")
           .update({
-            cleared_date: c.clearedDate || null,
             tenant_id: c.tenantId,
+            contract_id: c.contractId || null,
             cheque_date: c.chequeDate || null,
             cheque_no: c.chequeNo,
             bank: c.bank,
             amount: c.amount,
             status: c.status,
+            cleared_date: c.clearedDate || null,
             reconciled: c.reconciled || false,
           })
           .eq("id", id);
@@ -236,18 +353,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("cheques").delete().eq("id", id);
         if (error) throw error;
         setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
-      },
-
-      toggleReconciled: async (id) => {
-        const current = data.cheques.find((x) => x.id === id);
-        if (!current) return;
-        const newVal = !current.reconciled;
-        const { error } = await supabase.from("cheques").update({ reconciled: newVal }).eq("id", id);
-        if (error) throw error;
-        setData((p) => ({
-          ...p,
-          cheques: p.cheques.map((x) => (x.id === id ? { ...x, reconciled: newVal } : x)),
-        }));
       },
 
       addExpense: async (e) => {
@@ -270,8 +375,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (error) throw error;
         setData((p) => ({ ...p, expenses: p.expenses.filter((x) => x.id !== id) }));
       },
-
-      reset: () => setData({ units: [], tenants: [], cheques: [], expenses: [] }),
     }),
     [data, loading],
   );
@@ -293,6 +396,3 @@ export const fmtDate = (iso: string) => {
   const dt = new Date(iso);
   return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 };
-
-export const daysUntil = (iso: string) =>
-  Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
