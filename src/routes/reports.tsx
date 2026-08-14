@@ -12,7 +12,7 @@ import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/reports")({
   head: () => ({
-    meta: [{ title: "Reports — Estate Manager" }],
+    meta: [{ title: "Reports — Aqar Books" }],
   }),
   component: ReportsPage,
 });
