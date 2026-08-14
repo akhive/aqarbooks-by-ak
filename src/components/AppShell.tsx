@@ -1,5 +1,7 @@
-import { Link } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, Users, Banknote, DoorOpen, FileBarChart2 } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Building2, LayoutDashboard, Users, Banknote, DoorOpen, FileBarChart2, LogOut } from "lucide-react";
+import { supabase } from "../supabase";
+import { Button } from "@/components/ui/button";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -13,6 +15,13 @@ const nav = [
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-card/85 backdrop-blur">
@@ -26,20 +35,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="block text-xs text-muted-foreground">Built by AK</span>
             </span>
           </Link>
-          <nav className="-mx-1 flex gap-1 overflow-x-auto">
-            {nav.map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                activeOptions={{ exact: to === "/" }}
-                className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                activeProps={{ className: "bg-primary/10 text-primary hover:bg-primary/10" }}
-              >
-                <Icon className="size-4" />
-                {label}
-              </Link>
-            ))}
-          </nav>
+          <div className="flex items-center gap-2">
+            <nav className="-mx-1 flex gap-1 overflow-x-auto">
+              {nav.map(({ to, label, icon: Icon }) => (
+                <Link
+                  key={to}
+                  to={to}
+                  activeOptions={{ exact: to === "/" }}
+                  className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  activeProps={{ className: "bg-primary/10 text-primary hover:bg-primary/10" }}
+                >
+                  <Icon className="size-4" />
+                  {label}
+                </Link>
+              ))}
+            </nav>
+            <Button variant="outline" size="sm" onClick={logout} className="shrink-0">
+              <LogOut className="mr-1 size-4" />
+              Logout
+            </Button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
