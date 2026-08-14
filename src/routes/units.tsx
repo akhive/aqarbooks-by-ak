@@ -15,34 +15,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, fmtDate, useStore, type Unit } from "@/lib/store";
+import { currency, useStore, type Unit } from "@/lib/store";
+import { supabase } from "../supabase";
 
 export const Route = createFileRoute("/units")({
   head: () => ({
-    meta: [
-      { title: "Units — Estate Manager" },
-      {
-        name: "description",
-        content: "See every flat in the portfolio with occupied or vacant status, tenant and rent.",
-      },
-    ],
+    meta: [{ title: "Units — Estate Manager" }],
   }),
   component: UnitsPage,
 });
 
 type Form = Omit<Unit, "id">;
-const empty: Form = { flatNo: "", building: "", type: "", marketRent: 0 };
+const empty: Form = { flatNo: "", building: "", bedroomType: "", marketRent: 0 };
 
 function UnitsPage() {
-  const { data, addUnit, updateUnit, deleteUnit } = useStore();
+  const { data, refresh } = useStore();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(empty);
   const [error, setError] = useState("");
-
-  const tenantFor = (flatNo: string) =>
-    data.tenants.find((t) => t.flatNo === flatNo && t.status !== "Expired");
-  const vacantCount = data.units.filter((u) => !tenantFor(u.flatNo)).length;
 
   const startAdd = () => {
     setEditing(null);
@@ -53,7 +44,12 @@ function UnitsPage() {
 
   const startEdit = (u: Unit) => {
     setEditing(u.id);
-    setForm({ flatNo: u.flatNo, building: u.building, type: u.type, marketRent: u.marketRent });
+    setForm({
+      flatNo: u.flatNo,
+      building: u.building,
+      bedroomType: u.bedroomType,
+      marketRent: u.marketRent,
+    });
     setError("");
     setOpen(true);
   };
@@ -61,19 +57,48 @@ function UnitsPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.flatNo.trim()) return setError("Flat number is required.");
-    if (!form.building.trim()) return setError("Building is required.");
+
     try {
       if (editing) {
-        await updateUnit(editing, form);
+        const { error: err } = await supabase
+          .from("units")
+          .update({
+            flat_no: form.flatNo,
+            building: form.building,
+            bedroom_type: form.bedroomType,
+            market_rent: form.marketRent,
+          })
+          .eq("id", editing);
+        if (err) throw err;
         toast.success("Unit updated");
       } else {
-        await addUnit(form);
+        const { error: err } = await supabase.from("units").insert({
+          flat_no: form.flatNo,
+          building: form.building,
+          bedroom_type: form.bedroomType,
+          market_rent: form.marketRent,
+        });
+        if (err) throw err;
         toast.success("Unit added");
       }
+      await refresh();
       setOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error("Failed to save unit");
+      setError(err.message || "Failed to save unit");
+      toast.error(err.message || "Failed to save unit");
+    }
+  };
+
+  const remove = async (id: string, flatNo: string) => {
+    if (!confirm(`Delete unit ${flatNo}?`)) return;
+    try {
+      const { error: err } = await supabase.from("units").delete().eq("id", id);
+      if (err) throw err;
+      toast.success("Unit deleted");
+      await refresh();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete");
     }
   };
 
@@ -81,10 +106,11 @@ function UnitsPage() {
     <AppShell>
       <PageHeader
         title="Units"
-        description={`${data.units.length} units · ${data.units.length - vacantCount} occupied · ${vacantCount} vacant`}
+        description={`${data.units.length} unit(s)`}
         action={
           <Button onClick={startAdd}>
-            <Plus className="size-4" /> Add Unit
+            <Plus className="mr-2 h-4 w-4" />
+            Add Unit
           </Button>
         }
       />
@@ -96,58 +122,37 @@ function UnitsPage() {
               <TableRow>
                 <TableHead>Flat</TableHead>
                 <TableHead>Building</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Contract ends</TableHead>
-                <TableHead className="text-right">Rent</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Bedroom Type</TableHead>
+                <TableHead>Market Rent</TableHead>
                 <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.units.map((u) => {
-                const t = tenantFor(u.flatNo);
-                return (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.flatNo}</TableCell>
-                    <TableCell>{u.building}</TableCell>
-                    <TableCell>{u.type}</TableCell>
-                    <TableCell>{t ? t.name : <span className="text-muted-foreground">—</span>}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {t ? fmtDate(t.contractEnd) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">{currency(t ? t.rentAmount : u.marketRent)}</TableCell>
-                    <TableCell>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          t ? "bg-success/12 text-success" : "bg-warning/15 text-warning"
-                        }`}
-                      >
-                        {t ? "Occupied" : "Vacant"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => startEdit(u)}>
-                          <Pencil className="size-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={async () => {
-                            if (confirm("Delete this unit?")) {
-                              await deleteUnit(u.id);
-                              toast.success("Unit deleted");
-                            }
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {data.units.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                    No units yet. Click “Add Unit”.
+                  </TableCell>
+                </TableRow>
+              )}
+              {data.units.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell className="font-medium">{u.flatNo}</TableCell>
+                  <TableCell>{u.building || "—"}</TableCell>
+                  <TableCell>{u.bedroomType || "—"}</TableCell>
+                  <TableCell>{currency(u.marketRent)}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" onClick={() => startEdit(u)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => remove(u.id, u.flatNo)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
@@ -159,15 +164,15 @@ function UnitsPage() {
             <DialogTitle>{editing ? "Edit Unit" : "Add Unit"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Flat No</Label>
+            <div>
+              <Label>Flat No *</Label>
               <Input
                 value={form.flatNo}
                 onChange={(e) => setForm({ ...form, flatNo: e.target.value })}
                 placeholder="101"
               />
             </div>
-            <div className="space-y-2">
+            <div>
               <Label>Building</Label>
               <Input
                 value={form.building}
@@ -175,29 +180,30 @@ function UnitsPage() {
                 placeholder="Al Noor Tower"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Type</Label>
+            <div>
+              <Label>Bedroom Type</Label>
               <Input
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
-                placeholder="2 BHK"
+                value={form.bedroomType}
+                onChange={(e) => setForm({ ...form, bedroomType: e.target.value })}
+                placeholder="1BHK / 2BHK / Studio"
               />
             </div>
-            <div className="space-y-2">
+            <div>
               <Label>Market Rent (AED)</Label>
               <Input
                 type="number"
                 value={form.marketRent || ""}
                 onChange={(e) => setForm({ ...form, marketRent: Number(e.target.value) })}
-                placeholder="55000"
               />
             </div>
+
             {error && <p className="text-sm text-destructive">{error}</p>}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editing ? "Update" : "Add Unit"}</Button>
+              <Button type="submit">{editing ? "Save" : "Add Unit"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
