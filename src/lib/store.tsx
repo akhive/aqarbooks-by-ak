@@ -396,3 +396,5 @@ export const fmtDate = (iso: string) => {
   const dt = new Date(iso);
   return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 };
+export const daysUntil = (iso: string) =>
+  Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
