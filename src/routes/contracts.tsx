@@ -64,11 +64,22 @@ function ContractsPage() {
   }, [data.units]);
 
   const startAdd = () => {
-    setEditing(null);
-    setForm(empty);
-    setError("");
-    setOpen(true);
-  };
+  setEditing(null);
+
+  // Auto next lease number (001, 002, ...) — still editable
+  const nums = data.contracts
+    .map((c) => {
+      const m = (c.leaseNo || "").match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : 0;
+    })
+    .filter((n) => n > 0);
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  const autoLeaseNo = String(next).padStart(3, "0"); // 001, 002, 005...
+
+  setForm({ ...empty, leaseNo: autoLeaseNo });
+  setError("");
+  setOpen(true);
+};
 
   const startEdit = (c: Contract) => {
     setEditing(c.id);
