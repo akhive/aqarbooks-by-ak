@@ -6,8 +6,6 @@ import {
   useRouter,
   HeadContent,
   Scripts,
-  useNavigate,
-  useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -29,7 +27,7 @@ function NotFoundComponent() {
         <div className="mt-6">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
             Go home
           </Link>
@@ -53,23 +51,24 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
           This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          Something went wrong. Try refreshing.
         </p>
+        <p className="mt-2 text-xs text-muted-foreground break-all">{error?.message}</p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
             Try again
           </button>
           <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            href="/login"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium"
           >
-            Go home
+            Go to Login
           </a>
         </div>
       </div>
@@ -110,60 +109,66 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [checking, setChecking] = useState(true);
+function AuthGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
   const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
+    let mounted = true;
+
     supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
       setSession(data.session);
-      setChecking(false);
+      setReady(true);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
     });
 
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
-    if (checking) return;
-    if (!session && pathname !== "/login") {
-      navigate({ to: "/login" });
+    if (!ready) return;
+    const path = window.location.pathname;
+    if (!session && path !== "/login") {
+      window.location.href = "/login";
     }
-    if (session && pathname === "/login") {
-      navigate({ to: "/" });
+    if (session && path === "/login") {
+      window.location.href = "/";
     }
-  }, [checking, session, pathname, navigate]);
+  }, [ready, session]);
 
-  if (checking) {
+  if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     );
   }
 
-  // Login page — no StoreProvider needed
+  // Not logged in → only render login route (no StoreProvider)
   if (!session) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <Outlet />
-        <Toaster richColors position="top-right" />
-      </QueryClientProvider>
-    );
+    return <>{children}</>;
   }
+
+  // Logged in → full app with data store
+  return <StoreProvider>{children}</StoreProvider>;
+}
+
+function RootComponent() {
+  const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <StoreProvider>
+      <AuthGate>
         <Outlet />
         <Toaster richColors position="top-right" />
-      </StoreProvider>
+      </AuthGate>
     </QueryClientProvider>
   );
 }
