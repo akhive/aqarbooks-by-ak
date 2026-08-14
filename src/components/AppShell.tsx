@@ -6,6 +6,7 @@ const nav = [
   { to: "/tenants", label: "Tenants", icon: Users },
   { to: "/contracts", label: "Contracts", icon: FileBarChart2 },
   { to: "/cheques", label: "Cheques (PDC)", icon: Banknote },
+  { to: "/reconciliation", label: "Bank Reconciliation", icon: FileBarChart2 },
   { to: "/units", label: "Units", icon: DoorOpen },
   { to: "/expenses", label: "Expenses", icon: Banknote },
   { to: "/reports", label: "Reports", icon: FileBarChart2 },
