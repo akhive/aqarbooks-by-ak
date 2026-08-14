@@ -38,10 +38,10 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
-            AQAR BOOKS
+          <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
+            AK
           </div>
-          <CardTitle>Ak Builts</CardTitle>
+          <CardTitle>AQAR BOOKS</CardTitle>
           <p className="text-sm text-muted-foreground">Sign in to continue</p>
         </CardHeader>
         <CardContent>
