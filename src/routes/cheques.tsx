@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Download, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -21,15 +20,7 @@ import { currency, fmtDate, useStore, type Cheque, type ChequeStatus } from "@/l
 
 export const Route = createFileRoute("/cheques")({
   head: () => ({
-    meta: [
-      { title: "Cheques (PDC) — Estate Manager" },
-      {
-        name: "description",
-        content: "Record post-dated cheques per tenant with date, cheque number, bank, amount and status.",
-      },
-      { property: "og:title", content: "Cheques (PDC) — Estate Manager" },
-      { property: "og:description", content: "Track PDC, deposited, cleared and bounced cheques by tenant." },
-    ],
+    meta: [{ title: "Cheques (PDC) — Estate Manager" }],
   }),
   component: ChequesPage,
 });
@@ -47,38 +38,45 @@ const empty: Form = {
   reconciled: false,
 };
 
-const statusClass = (s: ChequeStatus) =>
-  s === "Cleared"
-    ? "bg-success/12 text-success"
-    : s === "Deposited"
-      ? "bg-primary/10 text-primary"
-      : s === "Bounced"
-        ? "bg-destructive/10 text-destructive"
-        : "bg-warning/15 text-warning";
-
 function ChequesPage() {
   const { data, addCheque, updateCheque, deleteCheque } = useStore();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(empty);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"all" | ChequeStatus>("all");
-  const [tenantFilter, setTenantFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | ChequeStatus>("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
+  // Tenant name
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
-  const rows = useMemo(
-    () =>
-      data.cheques
-        .filter((c) => (filter === "all" ? true : c.status === filter))
-        .filter((c) => (tenantFilter === "all" ? true : c.tenantId === tenantFilter))
-        .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate)),
-    [data.cheques, filter, tenantFilter],
-  );
+  // Flat No from latest contract of that tenant
+  const flatForTenant = (tenantId: string) => {
+    const contracts = data.contracts
+      .filter((c) => c.tenantId === tenantId)
+      .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+    if (contracts.length === 0) return "—";
+    const unit = data.units.find((u) => u.id === contracts[0].unitId);
+    return unit?.flatNo || "—";
+  };
+
+  const rows = useMemo(() => {
+    return data.cheques
+      .filter((c) => {
+        if (statusFilter !== "all" && c.status !== statusFilter) return false;
+        if (fromDate && c.chequeDate < fromDate) return false;
+        if (toDate && c.chequeDate > toDate) return false;
+        return true;
+      })
+      .sort((a, b) => (a.chequeDate > b.chequeDate ? 1 : -1));
+  }, [data.cheques, statusFilter, fromDate, toDate]);
+
+  const totalAmount = rows.reduce((s, c) => s + c.amount, 0);
 
   const startAdd = () => {
     setEditing(null);
-    setForm({ ...empty, tenantId: data.tenants[0]?.id ?? "" });
+    setForm(empty);
     setError("");
     setOpen(true);
   };
@@ -91,193 +89,251 @@ function ChequesPage() {
     setOpen(true);
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.tenantId) return setError("Select a tenant.");
+    if (!form.tenantId) return setError("Please select a tenant.");
     if (!form.chequeDate) return setError("Cheque date is required.");
-    if (!form.chequeNo.trim()) return setError("Cheque number is required.");
-    if (!form.bank.trim()) return setError("Bank name is required.");
     if (form.amount <= 0) return setError("Amount must be greater than zero.");
-    if (editing) {
-      updateCheque(editing, form);
-      toast.success("Cheque updated");
-    } else {
-      addCheque(form);
-      toast.success("Cheque added");
+
+    try {
+      if (editing) {
+        await updateCheque(editing, form);
+        toast.success("Cheque updated");
+      } else {
+        await addCheque(form);
+        toast.success("Cheque added");
+      }
+      setOpen(false);
+    } catch (err: any) {
+      setError(err.message || "Failed to save");
     }
-    setOpen(false);
   };
 
-  const total = rows.reduce((s, c) => s + c.amount, 0);
+  const remove = async (id: string) => {
+    if (!confirm("Delete this cheque?")) return;
+    try {
+      await deleteCheque(id);
+      toast.success("Cheque deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete");
+    }
+  };
+
+  // Export to Excel (CSV)
+  const exportExcel = () => {
+    const headers = ["Cheque Date", "Cheque No", "Tenant", "Flat No", "Bank", "Amount", "Status"];
+    const lines = rows.map((c) =>
+      [
+        c.chequeDate,
+        c.chequeNo,
+        tenantName(c.tenantId),
+        flatForTenant(c.tenantId),
+        c.bank,
+        c.amount,
+        c.status,
+      ].join(",")
+    );
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cheques_${fromDate || "all"}_${toDate || "all"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Print / PDF
+  const printPDF = () => {
+    window.print();
+  };
+
+  // Quick filter: next month
+  const setNextMonth = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    setFromDate(start.toISOString().slice(0, 10));
+    setToDate(end.toISOString().slice(0, 10));
+  };
 
   return (
     <AppShell>
       <PageHeader
         title="Cheques (PDC)"
-        description="Every cheque collected against a tenancy contract."
+        description={`${rows.length} cheque(s) · Total ${currency(totalAmount)}`}
         action={
-          <Button onClick={startAdd} disabled={data.tenants.length === 0}>
-            <Plus className="size-4" /> Add cheque
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportExcel}>
+              <Download className="mr-2 h-4 w-4" />
+              Export Excel
+            </Button>
+            <Button variant="outline" onClick={printPDF}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print / PDF
+            </Button>
+            <Button onClick={startAdd}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Cheque
+            </Button>
+          </div>
         }
       />
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <Select value={tenantFilter} onValueChange={setTenantFilter}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="All tenants" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All tenants</SelectItem>
-            {data.tenants.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ml-auto self-center text-sm text-muted-foreground">
-          {rows.length} cheque(s) · <span className="font-medium text-foreground">{currency(total)}</span>
-        </div>
-      </div>
+      {/* Filters */}
+      <Card className="mb-4">
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div>
+            <Label>From Date</Label>
+            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </div>
+          <div>
+            <Label>To Date</Label>
+            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
+          <div>
+            <Label>Status</Label>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="secondary" onClick={setNextMonth}>
+            Next Month
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setFromDate("");
+              setToDate("");
+              setStatusFilter("all");
+            }}
+          >
+            Clear
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Cheque date</TableHead>
+                <TableHead>Cheque Date</TableHead>
+                <TableHead>Cheque No</TableHead>
                 <TableHead>Tenant</TableHead>
-                <TableHead>Cheque no.</TableHead>
+                <TableHead>Flat No</TableHead>
                 <TableHead>Bank</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
+                <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? (
+              {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                    No cheques match this filter.
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                    No cheques found for this period.
                   </TableCell>
                 </TableRow>
-              ) : (
-                rows.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell>{fmtDate(c.chequeDate)}</TableCell>
-                    <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
-                    <TableCell>#{c.chequeNo}</TableCell>
-                    <TableCell>{c.bank}</TableCell>
-                    <TableCell className="text-right font-medium">{currency(c.amount)}</TableCell>
-                    <TableCell>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(c.status)}`}>
-                        {c.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" aria-label="Edit cheque" onClick={() => startEdit(c)}>
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Delete cheque"
-                        onClick={() => {
-                          deleteCheque(c.id);
-                          toast.success("Cheque deleted");
-                        }}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
               )}
+              {rows.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
+                  <TableCell>{c.chequeNo || "—"}</TableCell>
+                  <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
+                  <TableCell>{flatForTenant(c.tenantId)}</TableCell>
+                  <TableCell>{c.bank || "—"}</TableCell>
+                  <TableCell className="text-right font-medium">{currency(c.amount)}</TableCell>
+                  <TableCell>{c.status}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => remove(c.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
+      {/* Add / Edit Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit cheque" : "Add cheque"}</DialogTitle>
-            <DialogDescription>Post-dated cheques feed the dashboard and reports.</DialogDescription>
+            <DialogTitle>{editing ? "Edit Cheque" : "Add Cheque"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="tenant">Tenant</Label>
-              <Select value={form.tenantId} onValueChange={(v) => setForm({ ...form, tenantId: v })}>
-                <SelectTrigger id="tenant">
+            <div className="sm:col-span-2">
+              <Label>Tenant *</Label>
+              <Select
+                value={form.tenantId}
+                onValueChange={(v) => setForm({ ...form, tenantId: v })}
+              >
+                <SelectTrigger>
                   <SelectValue placeholder="Select tenant" />
                 </SelectTrigger>
                 <SelectContent>
                   {data.tenants.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.name} · Flat {t.flatNo}
+                      {t.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cdate">Cheque date</Label>
+            <div>
+              <Label>Cheque Date *</Label>
               <Input
-                id="cdate"
                 type="date"
                 value={form.chequeDate}
                 onChange={(e) => setForm({ ...form, chequeDate: e.target.value })}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cno">Cheque no.</Label>
+            <div>
+              <Label>Cheque No</Label>
               <Input
-                id="cno"
-                maxLength={30}
                 value={form.chequeNo}
                 onChange={(e) => setForm({ ...form, chequeNo: e.target.value })}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="bank">Bank</Label>
+            <div>
+              <Label>Bank</Label>
               <Input
-                id="bank"
-                maxLength={60}
                 value={form.bank}
                 onChange={(e) => setForm({ ...form, bank: e.target.value })}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="amt">Amount</Label>
+            <div>
+              <Label>Amount (AED) *</Label>
               <Input
-                id="amt"
                 type="number"
-                min={0}
                 value={form.amount || ""}
                 onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })}
               />
             </div>
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="cstatus">Status</Label>
+            <div className="sm:col-span-2">
+              <Label>Status</Label>
               <Select
                 value={form.status}
                 onValueChange={(v) => setForm({ ...form, status: v as ChequeStatus })}
               >
-                <SelectTrigger id="cstatus">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -289,12 +345,14 @@ function ChequesPage() {
                 </SelectContent>
               </Select>
             </div>
-            {error ? <p className="text-sm text-destructive sm:col-span-2">{error}</p> : null}
+
+            {error && <p className="text-sm text-destructive sm:col-span-2">{error}</p>}
+
             <DialogFooter className="sm:col-span-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editing ? "Save changes" : "Add cheque"}</Button>
+              <Button type="submit">{editing ? "Save" : "Add Cheque"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
