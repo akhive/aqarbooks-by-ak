@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { History, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { History, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,7 @@ function ContractsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("leaseNo");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [historyTenantId, setHistoryTenantId] = useState<string | null>(null);
+  const [unitSearch, setUnitSearch] = useState("");
 
   const tenantMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -114,7 +115,8 @@ function ContractsPage() {
   const sortIcon = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "");
 
   const rows = useMemo(() => {
-    const list = data.contracts.map((c) => {
+    const q = unitSearch.trim().toLowerCase();
+    let list = data.contracts.map((c) => {
       const rev = calcRevenue(c.startDate, c.endDate, c.rent);
       return {
         ...c,
@@ -123,6 +125,12 @@ function ContractsPage() {
         deferred: rev.deferred,
       };
     });
+
+    // Search by unit number
+    if (q) {
+      list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
+    }
+
     return list.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
@@ -150,7 +158,7 @@ function ContractsPage() {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data.contracts, unitFlat, sortKey, sortDir]);
+  }, [data.contracts, unitFlat, sortKey, sortDir, unitSearch]);
 
   const historyRows = useMemo(() => {
     if (!historyTenantId) return [];
@@ -174,13 +182,11 @@ function ContractsPage() {
     setOpen(true);
   };
 
-  /** Renew: new lease, period continues from old end, same duration, rent manual */
   const startRenew = (c: Contract) => {
     setEditing(null);
     const duration = dayDiff(c.startDate, c.endDate);
     const newStart = addDays(c.endDate, 1);
     const newEnd = addDays(newStart, duration);
-
     setForm({
       leaseNo: nextLeaseNo(),
       tenantId: c.tenantId,
@@ -188,8 +194,8 @@ function ContractsPage() {
       bedroomType: c.bedroomType,
       startDate: newStart,
       endDate: newEnd,
-      rent: 0, // user enters new rent
-      previousRent: c.rent, // old rent as previous
+      rent: 0,
+      previousRent: c.rent,
     });
     setError("");
     setOpen(true);
@@ -240,7 +246,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${data.contracts.length} contract(s)`}
+        description={`${rows.length} contract(s)${unitSearch ? " (filtered)" : ""}`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -248,6 +254,27 @@ function ContractsPage() {
           </Button>
         }
       />
+
+      {/* Search by unit number */}
+      <Card className="mb-4">
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div className="relative w-full max-w-xs">
+            <Label className="mb-1.5 block">Search by Unit No</Label>
+            <Search className="absolute left-3 top-9 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="e.g. 101"
+              value={unitSearch}
+              onChange={(e) => setUnitSearch(e.target.value)}
+            />
+          </div>
+          {unitSearch && (
+            <Button variant="ghost" onClick={() => setUnitSearch("")}>
+              Clear
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
@@ -298,7 +325,7 @@ function ContractsPage() {
               {rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
-                    No contracts yet. Click “Add Contract”.
+                    {unitSearch ? "No contracts for this unit." : "No contracts yet."}
                   </TableCell>
                 </TableRow>
               )}
@@ -317,20 +344,10 @@ function ContractsPage() {
                   <TableCell className="text-amber-600">{currency(c.deferred)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="Renew"
-                        onClick={() => startRenew(c)}
-                      >
+                      <Button size="icon" variant="ghost" title="Renew" onClick={() => startRenew(c)}>
                         <RefreshCw className="h-4 w-4 text-primary" />
                       </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="History"
-                        onClick={() => setHistoryTenantId(c.tenantId)}
-                      >
+                      <Button size="icon" variant="ghost" title="History" onClick={() => setHistoryTenantId(c.tenantId)}>
                         <History className="h-4 w-4" />
                       </Button>
                       <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
@@ -348,7 +365,7 @@ function ContractsPage() {
         </CardContent>
       </Card>
 
-      {/* Add / Edit / Renew dialog */}
+      {/* Add / Edit / Renew dialog — same as before */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -359,13 +376,8 @@ function ContractsPage() {
           <form onSubmit={submit} className="space-y-4">
             <div>
               <Label>Lease No</Label>
-              <Input
-                value={form.leaseNo}
-                onChange={(e) => setForm({ ...form, leaseNo: e.target.value })}
-                placeholder="001"
-              />
+              <Input value={form.leaseNo} onChange={(e) => setForm({ ...form, leaseNo: e.target.value })} />
             </div>
-
             <div>
               <Label>Tenant *</Label>
               <Select value={form.tenantId} onValueChange={(v) => setForm({ ...form, tenantId: v })}>
@@ -381,7 +393,6 @@ function ContractsPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
               <Label>Unit / Flat</Label>
               <Select value={form.unitId} onValueChange={onUnitChange}>
@@ -397,13 +408,9 @@ function ContractsPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
               <Label>Bedroom Type</Label>
-              <Select
-                value={form.bedroomType}
-                onValueChange={(v) => setForm({ ...form, bedroomType: v })}
-              >
+              <Select value={form.bedroomType} onValueChange={(v) => setForm({ ...form, bedroomType: v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -416,42 +423,26 @@ function ContractsPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Start Date *</Label>
-                <Input
-                  type="date"
-                  value={form.startDate}
-                  onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                />
+                <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
               </div>
               <div>
                 <Label>End Date *</Label>
-                <Input
-                  type="date"
-                  value={form.endDate}
-                  onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                />
+                <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>New Rent (AED) *</Label>
-                <Input
-                  type="number"
-                  value={form.rent || ""}
-                  onChange={(e) => setForm({ ...form, rent: Number(e.target.value) })}
-                  placeholder="Enter rent"
-                />
+                <Input type="number" value={form.rent || ""} onChange={(e) => setForm({ ...form, rent: Number(e.target.value) })} />
               </div>
               <div>
                 <Label>Previous Rent</Label>
                 <Input type="number" value={form.previousRent || ""} readOnly className="bg-muted" />
               </div>
             </div>
-
             {form.startDate && form.endDate && form.rent > 0 && (
               <div className="rounded-md bg-muted p-3 text-sm space-y-1">
                 <div className="flex justify-between">
@@ -468,9 +459,7 @@ function ContractsPage() {
                 </div>
               </div>
             )}
-
             {error && <p className="text-sm text-destructive">{error}</p>}
-
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
@@ -483,7 +472,7 @@ function ContractsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* History dialog */}
+      {/* History */}
       <Dialog open={!!historyTenantId} onOpenChange={(o) => !o && setHistoryTenantId(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -503,13 +492,6 @@ function ContractsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {historyRows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    No history.
-                  </TableCell>
-                </TableRow>
-              )}
               {historyRows.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
