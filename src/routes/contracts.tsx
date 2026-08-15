@@ -72,6 +72,7 @@ function ContractsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [historyTenantId, setHistoryTenantId] = useState<string | null>(null);
   const [unitSearch, setUnitSearch] = useState("");
+  const [tenantFilter, setTenantFilter] = useState<string>("all");
 
   const tenantMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -106,59 +107,70 @@ function ContractsPage() {
   };
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
       setSortKey(key);
       setSortDir("asc");
     }
   };
-  const sortIcon = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "");
+
+  const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 font-medium hover:underline"
+      onClick={() => toggleSort(k)}
+    >
+      {label}
+      <span className="text-xs text-muted-foreground">
+        {sortKey === k ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </button>
+  );
 
   const rows = useMemo(() => {
     const q = unitSearch.trim().toLowerCase();
+
     let list = data.contracts.map((c) => {
       const rev = calcRevenue(c.startDate, c.endDate, c.rent);
       return {
         ...c,
         unitLabel: unitFlat[c.unitId] || "—",
+        tenantName: tenantMap[c.tenantId] || "—",
         revenue: rev.currentYear,
         deferred: rev.deferred,
       };
     });
 
-    // Search by unit number
     if (q) {
       list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
     }
+    if (tenantFilter !== "all") {
+      list = list.filter((c) => c.tenantId === tenantFilter);
+    }
 
-    return list.sort((a, b) => {
+    const sorted = [...list].sort((a, b) => {
       let cmp = 0;
-      switch (sortKey) {
-        case "leaseNo":
-          cmp = (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
-          break;
-        case "unit":
-          cmp = (a.unitLabel || "").localeCompare(b.unitLabel || "", undefined, { numeric: true });
-          break;
-        case "period":
-          cmp = (a.startDate || "").localeCompare(b.startDate || "");
-          break;
-        case "rent":
-          cmp = a.rent - b.rent;
-          break;
-        case "previousRent":
-          cmp = a.previousRent - b.previousRent;
-          break;
-        case "revenue":
-          cmp = a.revenue - b.revenue;
-          break;
-        case "deferred":
-          cmp = a.deferred - b.deferred;
-          break;
+      if (sortKey === "leaseNo") {
+        cmp = (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
+      } else if (sortKey === "unit") {
+        cmp = (a.unitLabel || "").localeCompare(b.unitLabel || "", undefined, { numeric: true });
+      } else if (sortKey === "period") {
+        cmp = (a.startDate || "").localeCompare(b.startDate || "");
+      } else if (sortKey === "rent") {
+        cmp = (a.rent || 0) - (b.rent || 0);
+      } else if (sortKey === "previousRent") {
+        cmp = (a.previousRent || 0) - (b.previousRent || 0);
+      } else if (sortKey === "revenue") {
+        cmp = (a.revenue || 0) - (b.revenue || 0);
+      } else if (sortKey === "deferred") {
+        cmp = (a.deferred || 0) - (b.deferred || 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data.contracts, unitFlat, sortKey, sortDir, unitSearch]);
+
+    return sorted;
+  }, [data.contracts, unitFlat, tenantMap, sortKey, sortDir, unitSearch, tenantFilter]);
 
   const historyRows = useMemo(() => {
     if (!historyTenantId) return [];
@@ -246,7 +258,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${rows.length} contract(s)${unitSearch ? " (filtered)" : ""}`}
+        description={`${rows.length} contract(s)`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -255,22 +267,48 @@ function ContractsPage() {
         }
       />
 
-      {/* Search by unit number */}
+      {/* Filters */}
       <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-end gap-3 p-4">
-          <div className="relative w-full max-w-xs">
-            <Label className="mb-1.5 block">Search by Unit No</Label>
-            <Search className="absolute left-3 top-9 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="e.g. 101"
-              value={unitSearch}
-              onChange={(e) => setUnitSearch(e.target.value)}
-            />
+        <CardContent className="flex flex-wrap items-end gap-4 p-4">
+          <div className="w-full max-w-[200px]">
+            <Label className="mb-1.5 block">Search Unit No</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="e.g. 101"
+                value={unitSearch}
+                onChange={(e) => setUnitSearch(e.target.value)}
+              />
+            </div>
           </div>
-          {unitSearch && (
-            <Button variant="ghost" onClick={() => setUnitSearch("")}>
-              Clear
+
+          <div className="w-full max-w-[240px]">
+            <Label className="mb-1.5 block">Tenant</Label>
+            <Select value={tenantFilter} onValueChange={setTenantFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="All tenants" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tenants</SelectItem>
+                {data.tenants.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(unitSearch || tenantFilter !== "all") && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setUnitSearch("");
+                setTenantFilter("all");
+              }}
+            >
+              Clear filters
             </Button>
           )}
         </CardContent>
@@ -282,41 +320,27 @@ function ContractsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("leaseNo")}>
-                    Lease No{sortIcon("leaseNo")}
-                  </button>
+                  <SortBtn k="leaseNo" label="Lease No" />
                 </TableHead>
                 <TableHead>Tenant</TableHead>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("unit")}>
-                    Unit{sortIcon("unit")}
-                  </button>
+                  <SortBtn k="unit" label="Unit" />
                 </TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("period")}>
-                    Period{sortIcon("period")}
-                  </button>
+                  <SortBtn k="period" label="Period" />
                 </TableHead>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("rent")}>
-                    Rent{sortIcon("rent")}
-                  </button>
+                  <SortBtn k="rent" label="Rent" />
                 </TableHead>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("previousRent")}>
-                    Previous Rent{sortIcon("previousRent")}
-                  </button>
+                  <SortBtn k="previousRent" label="Previous Rent" />
                 </TableHead>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("revenue")}>
-                    Revenue (This Year){sortIcon("revenue")}
-                  </button>
+                  <SortBtn k="revenue" label="Revenue (This Year)" />
                 </TableHead>
                 <TableHead>
-                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("deferred")}>
-                    Deferred{sortIcon("deferred")}
-                  </button>
+                  <SortBtn k="deferred" label="Deferred" />
                 </TableHead>
                 <TableHead className="w-36"></TableHead>
               </TableRow>
@@ -325,14 +349,14 @@ function ContractsPage() {
               {rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
-                    {unitSearch ? "No contracts for this unit." : "No contracts yet."}
+                    No contracts found.
                   </TableCell>
                 </TableRow>
               )}
               {rows.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
-                  <TableCell>{tenantMap[c.tenantId] || "—"}</TableCell>
+                  <TableCell>{c.tenantName}</TableCell>
                   <TableCell>{c.unitLabel}</TableCell>
                   <TableCell>{c.bedroomType || "—"}</TableCell>
                   <TableCell>
@@ -347,7 +371,12 @@ function ContractsPage() {
                       <Button size="icon" variant="ghost" title="Renew" onClick={() => startRenew(c)}>
                         <RefreshCw className="h-4 w-4 text-primary" />
                       </Button>
-                      <Button size="icon" variant="ghost" title="History" onClick={() => setHistoryTenantId(c.tenantId)}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="History"
+                        onClick={() => setHistoryTenantId(c.tenantId)}
+                      >
                         <History className="h-4 w-4" />
                       </Button>
                       <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
@@ -365,7 +394,7 @@ function ContractsPage() {
         </CardContent>
       </Card>
 
-      {/* Add / Edit / Renew dialog — same as before */}
+      {/* Add / Edit / Renew */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
