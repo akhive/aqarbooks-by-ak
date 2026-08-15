@@ -10,73 +10,167 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChequesRouteImport } from './routes/cheques'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as UnitsRouteImport } from './routes/units'
+import { Route as ContractsRouteImport } from './routes/contracts'
+import { Route as ContractsContractIdRouteImport } from './routes/contracts.$contractId'
+import { Route as ExpensesRouteImport } from './routes/expenses'
+import { Route as ReconciliationRouteImport } from './routes/reconciliation'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
 const ChequesRoute = ChequesRouteImport.update({
   id: '/cheques',
   path: '/cheques',
   getParentRoute: () => rootRouteImport,
 } as any)
+
 const ReportsRoute = ReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
+
 const TenantsRoute = TenantsRouteImport.update({
   id: '/tenants',
   path: '/tenants',
   getParentRoute: () => rootRouteImport,
 } as any)
+
 const UnitsRoute = UnitsRouteImport.update({
   id: '/units',
   path: '/units',
   getParentRoute: () => rootRouteImport,
 } as any)
 
+const ContractsRoute = ContractsRouteImport.update({
+  id: '/contracts',
+  path: '/contracts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
+const ContractsContractIdRoute = ContractsContractIdRouteImport.update({
+  id: '/contracts/$contractId',
+  path: '/contracts/$contractId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
+const ExpensesRoute = ExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
+const ReconciliationRoute = ReconciliationRouteImport.update({
+  id: '/reconciliation',
+  path: '/reconciliation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/cheques': typeof ChequesRoute
   '/reports': typeof ReportsRoute
   '/tenants': typeof TenantsRoute
   '/units': typeof UnitsRoute
+  '/contracts': typeof ContractsRoute
+  '/contracts/$contractId': typeof ContractsContractIdRoute
+  '/expenses': typeof ExpensesRoute
+  '/reconciliation': typeof ReconciliationRoute
 }
+
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/cheques': typeof ChequesRoute
   '/reports': typeof ReportsRoute
   '/tenants': typeof TenantsRoute
   '/units': typeof UnitsRoute
+  '/contracts': typeof ContractsRoute
+  '/contracts/$contractId': typeof ContractsContractIdRoute
+  '/expenses': typeof ExpensesRoute
+  '/reconciliation': typeof ReconciliationRoute
 }
+
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/cheques': typeof ChequesRoute
   '/reports': typeof ReportsRoute
   '/tenants': typeof TenantsRoute
   '/units': typeof UnitsRoute
+  '/contracts': typeof ContractsRoute
+  '/contracts/$contractId': typeof ContractsContractIdRoute
+  '/expenses': typeof ExpensesRoute
+  '/reconciliation': typeof ReconciliationRoute
 }
+
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/cheques' | '/reports' | '/tenants' | '/units'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/cheques'
+    | '/reports'
+    | '/tenants'
+    | '/units'
+    | '/contracts'
+    | '/contracts/$contractId'
+    | '/expenses'
+    | '/reconciliation'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/cheques' | '/reports' | '/tenants' | '/units'
-  id: '__root__' | '/' | '/cheques' | '/reports' | '/tenants' | '/units'
+  to:
+    | '/'
+    | '/login'
+    | '/cheques'
+    | '/reports'
+    | '/tenants'
+    | '/units'
+    | '/contracts'
+    | '/contracts/$contractId'
+    | '/expenses'
+    | '/reconciliation'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/cheques'
+    | '/reports'
+    | '/tenants'
+    | '/units'
+    | '/contracts'
+    | '/contracts/$contractId'
+    | '/expenses'
+    | '/reconciliation'
   fileRoutesById: FileRoutesById
 }
+
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
   ChequesRoute: typeof ChequesRoute
   ReportsRoute: typeof ReportsRoute
   TenantsRoute: typeof TenantsRoute
   UnitsRoute: typeof UnitsRoute
+  ContractsRoute: typeof ContractsRoute
+  ContractsContractIdRoute: typeof ContractsContractIdRoute
+  ExpensesRoute: typeof ExpensesRoute
+  ReconciliationRoute: typeof ReconciliationRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -86,6 +180,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cheques': {
@@ -116,16 +217,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UnitsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contracts': {
+      id: '/contracts'
+      path: '/contracts'
+      fullPath: '/contracts'
+      preLoaderRoute: typeof ContractsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contracts/$contractId': {
+      id: '/contracts/$contractId'
+      path: '/contracts/$contractId'
+      fullPath: '/contracts/$contractId'
+      preLoaderRoute: typeof ContractsContractIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/expenses': {
+      id: '/expenses'
+      path: '/expenses'
+      fullPath: '/expenses'
+      preLoaderRoute: typeof ExpensesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reconciliation': {
+      id: '/reconciliation'
+      path: '/reconciliation'
+      fullPath: '/reconciliation'
+      preLoaderRoute: typeof ReconciliationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
   ChequesRoute: ChequesRoute,
   ReportsRoute: ReportsRoute,
   TenantsRoute: TenantsRoute,
   UnitsRoute: UnitsRoute,
+  ContractsRoute: ContractsRoute,
+  ContractsContractIdRoute: ContractsContractIdRoute,
+  ExpensesRoute: ExpensesRoute,
+  ReconciliationRoute: ReconciliationRoute,
 }
+
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
