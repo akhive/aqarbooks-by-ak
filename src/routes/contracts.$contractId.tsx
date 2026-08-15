@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,7 +27,6 @@ import {
   currency,
   fmtDate,
   useStore,
-  type ChequeStatus,
   type ContractStatus,
 } from "@/lib/store";
 import { supabase } from "../supabase";
@@ -44,20 +43,22 @@ function addMonths(iso: string, months: number) {
 
 function ContractDetailPage() {
   const { contractId } = Route.useParams();
-  const navigate = useNavigate();
-  const { data, refresh, addCheque, deleteCheque, updateContract } = useStore();
+  const { data, loading, refresh, addCheque, deleteCheque, updateContract } = useStore();
 
   const contract = data.contracts.find((c) => c.id === contractId);
   const tenant = data.tenants.find((t) => t.id === contract?.tenantId);
   const unit = data.units.find((u) => u.id === contract?.unitId);
 
-  const cheques = useMemo(
-    () =>
-      data.cheques
-        .filter((c) => c.contractId === contractId || (!c.contractId && c.tenantId === contract?.tenantId))
-        .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate)),
-    [data.cheques, contractId, contract?.tenantId],
-  );
+  const cheques = useMemo(() => {
+    if (!contract) return [];
+    return data.cheques
+      .filter(
+        (c) =>
+          c.contractId === contractId ||
+          (!c.contractId && c.tenantId === contract.tenantId),
+      )
+      .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
+  }, [data.cheques, contractId, contract]);
 
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitCount, setSplitCount] = useState(4);
@@ -68,12 +69,21 @@ function ContractDetailPage() {
   const [actionNotes, setActionNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
+  if (loading) {
+    return (
+      <AppShell>
+        <p className="text-sm text-muted-foreground">Loading contract...</p>
+      </AppShell>
+    );
+  }
+
   if (!contract) {
     return (
       <AppShell>
         <p className="text-muted-foreground">Contract not found.</p>
-        <Button className="mt-4" variant="outline" onClick={() => navigate({ to: "/contracts" })}>
-          Back to Contracts
+        <p className="mt-1 text-xs text-muted-foreground">ID: {contractId}</p>
+        <Button asChild className="mt-4" variant="outline">
+          <Link to="/contracts">Back to Contracts</Link>
         </Button>
       </AppShell>
     );
@@ -129,7 +139,6 @@ function ContractDetailPage() {
         endedAt: actionDate,
         notes: actionNotes || contract.notes,
       });
-      // Also push to supabase in case store mapping needs it
       await supabase
         .from("contracts")
         .update({
@@ -159,7 +168,10 @@ function ContractDetailPage() {
   return (
     <AppShell>
       <div className="mb-4">
-        <Link to="/contracts" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          to="/contracts"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" /> Back to Contracts
         </Link>
       </div>
@@ -204,7 +216,6 @@ function ContractDetailPage() {
         }
       />
 
-      {/* Details */}
       <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="p-4">
@@ -302,14 +313,10 @@ function ContractDetailPage() {
                 {currency(contract.rent - chequeTotal)}
               </span>
             </div>
-            <p className="pt-2 text-xs text-muted-foreground">
-              Tip: use Split PDCs so cheque total matches lease rent.
-            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Cheques */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Payment schedule (Cheques)</CardTitle>
@@ -364,7 +371,6 @@ function ContractDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Split PDCs dialog */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent>
           <DialogHeader>
@@ -372,7 +378,7 @@ function ContractDetailPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Lease rent {currency(contract.rent)} will be split equally. Last cheque adjusts for rounding.
+              Lease rent {currency(contract.rent)} will be split equally.
             </p>
             <div>
               <Label>Number of cheques</Label>
@@ -383,7 +389,7 @@ function ContractDetailPage() {
                 <SelectContent>
                   {[1, 2, 3, 4, 6, 12].map((n) => (
                     <SelectItem key={n} value={String(n)}>
-                      {n} cheque(s) × ~{currency(Math.round(contract.rent / n))}
+                      {n} × ~{currency(Math.round(contract.rent / n))}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -405,7 +411,6 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* End / Cancel / Break */}
       <Dialog open={actionOpen} onOpenChange={setActionOpen}>
         <DialogContent>
           <DialogHeader>
@@ -430,16 +435,16 @@ function ContractDetailPage() {
                 placeholder="Reason / remarks"
               />
             </div>
-            <p className="text-sm text-muted-foreground">
-              Status will become <strong>{actionType}</strong>. Unit will show as vacant if no other active
-              contract covers today.
-            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setActionOpen(false)}>
               Close
             </Button>
-            <Button variant={actionType === "Broken" ? "destructive" : "default"} onClick={applyAction} disabled={saving}>
+            <Button
+              variant={actionType === "Broken" ? "destructive" : "default"}
+              onClick={applyAction}
+              disabled={saving}
+            >
               {saving ? "Saving..." : "Confirm"}
             </Button>
           </DialogFooter>
