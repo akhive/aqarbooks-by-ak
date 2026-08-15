@@ -18,6 +18,8 @@ export type Tenant = {
   fromDate: string;
 };
 
+export type ContractStatus = "Active" | "Ended" | "Cancelled" | "Broken";
+
 export type Contract = {
   id: string;
   leaseNo: string;
@@ -28,6 +30,9 @@ export type Contract = {
   rent: number;
   previousRent: number;
   bedroomType: string;
+  status: ContractStatus;
+  notes?: string;
+  endedAt?: string;
 };
 
 export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
@@ -107,6 +112,9 @@ const mapContract = (r: any): Contract => ({
   rent: Number(r.rent) || 0,
   previousRent: Number(r.previous_rent) || 0,
   bedroomType: r.bedroom_type || "",
+  status: (r.status as ContractStatus) || "Active",
+  notes: r.notes || "",
+  endedAt: r.ended_at || "",
 });
 
 const mapCheque = (r: any): Cheque => ({
@@ -143,7 +151,6 @@ export function calcRevenue(startDate: string, endDate: string, rent: number) {
 
   const daily = rent / 365;
 
-  // days that fall inside current calendar year
   const currentStart = start > yearStart ? start : yearStart;
   const currentEnd = end < yearEnd ? end : yearEnd;
 
@@ -252,12 +259,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       addContract: async (c) => {
-        // Auto previous rent from last contract of same tenant
         const last = data.contracts
           .filter((x) => x.tenantId === c.tenantId)
           .sort((a, b) => (a.startDate < b.startDate ? 1 : -1))[0];
 
-        const previousRent = last ? last.rent : 0;
+        const previousRent = c.previousRent > 0 ? c.previousRent : last ? last.rent : 0;
 
         const { data: row, error } = await supabase
           .from("contracts")
@@ -270,6 +276,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             rent: c.rent,
             previous_rent: previousRent,
             bedroom_type: c.bedroomType,
+            status: c.status || "Active",
+            notes: c.notes || null,
+            ended_at: c.endedAt || null,
           })
           .select()
           .single();
@@ -289,6 +298,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             rent: c.rent,
             previous_rent: c.previousRent,
             bedroom_type: c.bedroomType,
+            status: c.status || "Active",
+            notes: c.notes || null,
+            ended_at: c.endedAt || null,
           })
           .eq("id", id);
         if (error) throw error;
@@ -389,12 +401,17 @@ export function useStore() {
 }
 
 export const currency = (n: number) =>
-  new Intl.NumberFormat("en-AE", { style: "currency", currency: "AED", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
+    maximumFractionDigits: 0,
+  }).format(n);
 
 export const fmtDate = (iso: string) => {
   if (!iso) return "—";
   const dt = new Date(iso);
   return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 };
+
 export const daysUntil = (iso: string) =>
   Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
