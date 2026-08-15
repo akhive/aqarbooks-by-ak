@@ -31,7 +31,7 @@ import {
 } from "@/lib/store";
 import { supabase } from "../supabase";
 
-export const Route = createFileRoute("/contracts/$contractId")({
+export const Route = createFileRoute("/contract/$contractId")({
   component: ContractDetailPage,
 });
 
