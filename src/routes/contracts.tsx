@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { History, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,14 @@ export const Route = createFileRoute("/contracts")({
 });
 
 type Form = Omit<Contract, "id">;
+type SortKey =
+  | "leaseNo"
+  | "unit"
+  | "period"
+  | "rent"
+  | "previousRent"
+  | "revenue"
+  | "deferred";
 
 const empty: Form = {
   leaseNo: "",
@@ -44,12 +52,25 @@ const empty: Form = {
   bedroomType: "",
 };
 
+function addDays(iso: string, days: number) {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function dayDiff(start: string, end: string) {
+  return Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
+}
+
 function ContractsPage() {
   const { data, addContract, updateContract, deleteContract } = useStore();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(empty);
   const [error, setError] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("leaseNo");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [historyTenantId, setHistoryTenantId] = useState<string | null>(null);
 
   const tenantMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -57,29 +78,93 @@ function ContractsPage() {
     return m;
   }, [data.tenants]);
 
-  const unitMap = useMemo(() => {
+  const unitFlat = useMemo(() => {
     const m: Record<string, string> = {};
-    data.units.forEach((u) => (m[u.id] = `${u.flatNo} — ${u.building || ""}`));
+    data.units.forEach((u) => (m[u.id] = u.flatNo || "—"));
     return m;
   }, [data.units]);
 
+  const bedroomOptions = useMemo(() => {
+    const set = new Set<string>();
+    data.units.forEach((u) => {
+      if (u.bedroomType?.trim()) set.add(u.bedroomType.trim());
+    });
+    if (set.size === 0) ["Studio", "1 BHK", "2 BHK", "3 BHK"].forEach((t) => set.add(t));
+    return [...set].sort();
+  }, [data.units]);
+
+  const nextLeaseNo = () => {
+    const nums = data.contracts
+      .map((c) => {
+        const m = (c.leaseNo || "").match(/(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+      })
+      .filter((n) => n > 0);
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    return String(next).padStart(3, "0");
+  };
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+  const sortIcon = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : "");
+
+  const rows = useMemo(() => {
+    const list = data.contracts.map((c) => {
+      const rev = calcRevenue(c.startDate, c.endDate, c.rent);
+      return {
+        ...c,
+        unitLabel: unitFlat[c.unitId] || "—",
+        revenue: rev.currentYear,
+        deferred: rev.deferred,
+      };
+    });
+    return list.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "leaseNo":
+          cmp = (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
+          break;
+        case "unit":
+          cmp = (a.unitLabel || "").localeCompare(b.unitLabel || "", undefined, { numeric: true });
+          break;
+        case "period":
+          cmp = (a.startDate || "").localeCompare(b.startDate || "");
+          break;
+        case "rent":
+          cmp = a.rent - b.rent;
+          break;
+        case "previousRent":
+          cmp = a.previousRent - b.previousRent;
+          break;
+        case "revenue":
+          cmp = a.revenue - b.revenue;
+          break;
+        case "deferred":
+          cmp = a.deferred - b.deferred;
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [data.contracts, unitFlat, sortKey, sortDir]);
+
+  const historyRows = useMemo(() => {
+    if (!historyTenantId) return [];
+    return data.contracts
+      .filter((c) => c.tenantId === historyTenantId)
+      .sort((a, b) => b.startDate.localeCompare(a.startDate));
+  }, [data.contracts, historyTenantId]);
+
   const startAdd = () => {
-  setEditing(null);
-
-  // Auto next lease number (001, 002, ...) — still editable
-  const nums = data.contracts
-    .map((c) => {
-      const m = (c.leaseNo || "").match(/(\d+)/);
-      return m ? parseInt(m[1], 10) : 0;
-    })
-    .filter((n) => n > 0);
-  const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  const autoLeaseNo = String(next).padStart(3, "0"); // 001, 002, 005...
-
-  setForm({ ...empty, leaseNo: autoLeaseNo });
-  setError("");
-  setOpen(true);
-};
+    setEditing(null);
+    setForm({ ...empty, leaseNo: nextLeaseNo() });
+    setError("");
+    setOpen(true);
+  };
 
   const startEdit = (c: Contract) => {
     setEditing(c.id);
@@ -87,6 +172,37 @@ function ContractsPage() {
     setForm(rest);
     setError("");
     setOpen(true);
+  };
+
+  /** Renew: new lease, period continues from old end, same duration, rent manual */
+  const startRenew = (c: Contract) => {
+    setEditing(null);
+    const duration = dayDiff(c.startDate, c.endDate);
+    const newStart = addDays(c.endDate, 1);
+    const newEnd = addDays(newStart, duration);
+
+    setForm({
+      leaseNo: nextLeaseNo(),
+      tenantId: c.tenantId,
+      unitId: c.unitId,
+      bedroomType: c.bedroomType,
+      startDate: newStart,
+      endDate: newEnd,
+      rent: 0, // user enters new rent
+      previousRent: c.rent, // old rent as previous
+    });
+    setError("");
+    setOpen(true);
+    toast.message("Renewal form ready — enter new rent and adjust period if needed");
+  };
+
+  const onUnitChange = (unitId: string) => {
+    const unit = data.units.find((u) => u.id === unitId);
+    setForm((f) => ({
+      ...f,
+      unitId,
+      bedroomType: unit?.bedroomType || f.bedroomType,
+    }));
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -102,7 +218,7 @@ function ContractsPage() {
         toast.success("Contract updated");
       } else {
         await addContract(form);
-        toast.success("Contract added");
+        toast.success("Contract saved");
       }
       setOpen(false);
     } catch (err: any) {
@@ -138,61 +254,107 @@ function ContractsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Lease No</TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("leaseNo")}>
+                    Lease No{sortIcon("leaseNo")}
+                  </button>
+                </TableHead>
                 <TableHead>Tenant</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Period</TableHead>
-                <TableHead>Rent</TableHead>
-                <TableHead>Previous Rent</TableHead>
-                <TableHead>Revenue (This Year)</TableHead>
-                <TableHead>Deferred</TableHead>
-                <TableHead className="w-24"></TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("unit")}>
+                    Unit{sortIcon("unit")}
+                  </button>
+                </TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("period")}>
+                    Period{sortIcon("period")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("rent")}>
+                    Rent{sortIcon("rent")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("previousRent")}>
+                    Previous Rent{sortIcon("previousRent")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("revenue")}>
+                    Revenue (This Year){sortIcon("revenue")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="font-medium hover:underline" onClick={() => toggleSort("deferred")}>
+                    Deferred{sortIcon("deferred")}
+                  </button>
+                </TableHead>
+                <TableHead className="w-36"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.contracts.length === 0 && (
+              {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                     No contracts yet. Click “Add Contract”.
                   </TableCell>
                 </TableRow>
               )}
-              {data.contracts.map((c) => {
-                const { currentYear, deferred } = calcRevenue(c.startDate, c.endDate, c.rent);
-                return (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
-                    <TableCell>{tenantMap[c.tenantId] || "—"}</TableCell>
-                    <TableCell>{unitMap[c.unitId] || "—"}</TableCell>
-                    <TableCell>
-                      {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
-                    </TableCell>
-                    <TableCell>{currency(c.rent)}</TableCell>
-                    <TableCell>{currency(c.previousRent)}</TableCell>
-                    <TableCell className="text-emerald-600 font-medium">{currency(currentYear)}</TableCell>
-                    <TableCell className="text-amber-600">{currency(deferred)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => remove(c.id, c.leaseNo)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {rows.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
+                  <TableCell>{tenantMap[c.tenantId] || "—"}</TableCell>
+                  <TableCell>{c.unitLabel}</TableCell>
+                  <TableCell>{c.bedroomType || "—"}</TableCell>
+                  <TableCell>
+                    {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
+                  </TableCell>
+                  <TableCell>{currency(c.rent)}</TableCell>
+                  <TableCell>{currency(c.previousRent)}</TableCell>
+                  <TableCell className="text-emerald-600 font-medium">{currency(c.revenue)}</TableCell>
+                  <TableCell className="text-amber-600">{currency(c.deferred)}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Renew"
+                        onClick={() => startRenew(c)}
+                      >
+                        <RefreshCw className="h-4 w-4 text-primary" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="History"
+                        onClick={() => setHistoryTenantId(c.tenantId)}
+                      >
+                        <History className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => remove(c.id, c.leaseNo)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
+      {/* Add / Edit / Renew dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Contract" : "Add Contract"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Contract" : form.previousRent > 0 ? "Renew Contract" : "Add Contract"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-4">
             <div>
@@ -200,16 +362,13 @@ function ContractsPage() {
               <Input
                 value={form.leaseNo}
                 onChange={(e) => setForm({ ...form, leaseNo: e.target.value })}
-                placeholder="e.g. L-2026-001"
+                placeholder="001"
               />
             </div>
 
             <div>
               <Label>Tenant *</Label>
-              <Select
-                value={form.tenantId}
-                onValueChange={(v) => setForm({ ...form, tenantId: v })}
-              >
+              <Select value={form.tenantId} onValueChange={(v) => setForm({ ...form, tenantId: v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select tenant" />
                 </SelectTrigger>
@@ -225,17 +384,33 @@ function ContractsPage() {
 
             <div>
               <Label>Unit / Flat</Label>
-              <Select
-                value={form.unitId}
-                onValueChange={(v) => setForm({ ...form, unitId: v })}
-              >
+              <Select value={form.unitId} onValueChange={onUnitChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select unit" />
                 </SelectTrigger>
                 <SelectContent>
                   {data.units.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
-                      {u.flatNo} — {u.building} ({u.bedroomType})
+                      {u.flatNo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Bedroom Type</Label>
+              <Select
+                value={form.bedroomType}
+                onValueChange={(v) => setForm({ ...form, bedroomType: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {bedroomOptions.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -263,20 +438,17 @@ function ContractsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Rent (AED) *</Label>
+                <Label>New Rent (AED) *</Label>
                 <Input
                   type="number"
                   value={form.rent || ""}
                   onChange={(e) => setForm({ ...form, rent: Number(e.target.value) })}
+                  placeholder="Enter rent"
                 />
               </div>
               <div>
-                <Label>Bedroom Type</Label>
-                <Input
-                  value={form.bedroomType}
-                  onChange={(e) => setForm({ ...form, bedroomType: e.target.value })}
-                  placeholder="1BHK / 2BHK / Studio"
-                />
+                <Label>Previous Rent</Label>
+                <Input type="number" value={form.previousRent || ""} readOnly className="bg-muted" />
               </div>
             </div>
 
@@ -303,9 +475,60 @@ function ContractsPage() {
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editing ? "Save Changes" : "Add Contract"}</Button>
+              <Button type="submit">
+                {editing ? "Save Changes" : form.previousRent > 0 ? "Save Renewal" : "Add Contract"}
+              </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* History dialog */}
+      <Dialog open={!!historyTenantId} onOpenChange={(o) => !o && setHistoryTenantId(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Contract history — {historyTenantId ? tenantMap[historyTenantId] : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Lease No</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Rent</TableHead>
+                <TableHead>Previous</TableHead>
+                <TableHead>Type</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {historyRows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    No history.
+                  </TableCell>
+                </TableRow>
+              )}
+              {historyRows.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
+                  <TableCell>{unitFlat[c.unitId] || "—"}</TableCell>
+                  <TableCell>
+                    {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
+                  </TableCell>
+                  <TableCell>{currency(c.rent)}</TableCell>
+                  <TableCell>{currency(c.previousRent)}</TableCell>
+                  <TableCell>{c.bedroomType || "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryTenantId(null)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppShell>
