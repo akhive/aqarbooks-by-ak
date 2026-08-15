@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { History, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -50,6 +50,9 @@ const empty: Form = {
   rent: 0,
   previousRent: 0,
   bedroomType: "",
+  status: "Active",
+  notes: "",
+  endedAt: "",
 };
 
 function addDays(iso: string, days: number) {
@@ -115,9 +118,8 @@ function ContractsPage() {
   };
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
       setSortDir("asc");
     }
@@ -150,14 +152,10 @@ function ContractsPage() {
       };
     });
 
-    if (q) {
-      list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
-    }
-    if (tenantFilter !== "all") {
-      list = list.filter((c) => c.tenantId === tenantFilter);
-    }
+    if (q) list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
+    if (tenantFilter !== "all") list = list.filter((c) => c.tenantId === tenantFilter);
 
-    const sorted = [...list].sort((a, b) => {
+    return [...list].sort((a, b) => {
       let cmp = 0;
       if (sortKey === "leaseNo") {
         cmp = (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
@@ -176,8 +174,6 @@ function ContractsPage() {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-
-    return sorted;
   }, [data.contracts, unitFlat, tenantMap, sortKey, sortDir, unitSearch, tenantFilter]);
 
   const historyRows = useMemo(() => {
@@ -189,7 +185,7 @@ function ContractsPage() {
 
   const startAdd = () => {
     setEditing(null);
-    setForm({ ...empty, leaseNo: nextLeaseNo() });
+    setForm({ ...empty, leaseNo: nextLeaseNo(), status: "Active" });
     setError("");
     setOpen(true);
   };
@@ -197,7 +193,7 @@ function ContractsPage() {
   const startEdit = (c: Contract) => {
     setEditing(c.id);
     const { id: _id, ...rest } = c;
-    setForm(rest);
+    setForm({ ...empty, ...rest });
     setError("");
     setOpen(true);
   };
@@ -216,6 +212,9 @@ function ContractsPage() {
       endDate: newEnd,
       rent: 0,
       previousRent: c.rent,
+      status: "Active",
+      notes: "",
+      endedAt: "",
     });
     setError("");
     setOpen(true);
@@ -266,7 +265,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${rows.length} contract(s)`}
+        description={`${rows.length} contract(s) · Click Lease No to open details`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -307,7 +306,6 @@ function ContractsPage() {
                 onFocus={() => setTenantOpen(true)}
               />
             </div>
-
             {tenantOpen && (
               <div className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md">
                 <button
@@ -371,6 +369,7 @@ function ContractsPage() {
                   <SortBtn k="unit" label="Unit" />
                 </TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>
                   <SortBtn k="period" label="Period" />
                 </TableHead>
@@ -392,17 +391,38 @@ function ContractsPage() {
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
                     No contracts found.
                   </TableCell>
                 </TableRow>
               )}
               {rows.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      to="/contracts/$contractId"
+                      params={{ contractId: c.id }}
+                      className="text-primary hover:underline"
+                    >
+                      {c.leaseNo || "View"}
+                    </Link>
+                  </TableCell>
                   <TableCell>{c.tenantName}</TableCell>
                   <TableCell>{c.unitLabel}</TableCell>
                   <TableCell>{c.bedroomType || "—"}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        c.status === "Active"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : c.status === "Ended"
+                            ? "bg-slate-100 text-slate-700"
+                            : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {c.status || "Active"}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
@@ -576,23 +596,32 @@ function ContractsPage() {
               <TableRow>
                 <TableHead>Lease No</TableHead>
                 <TableHead>Unit</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Period</TableHead>
                 <TableHead>Rent</TableHead>
                 <TableHead>Previous</TableHead>
-                <TableHead>Type</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {historyRows.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      to="/contracts/$contractId"
+                      params={{ contractId: c.id }}
+                      className="text-primary hover:underline"
+                      onClick={() => setHistoryTenantId(null)}
+                    >
+                      {c.leaseNo || "View"}
+                    </Link>
+                  </TableCell>
                   <TableCell>{unitFlat[c.unitId] || "—"}</TableCell>
+                  <TableCell>{c.status || "Active"}</TableCell>
                   <TableCell>
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
                   <TableCell>{currency(c.previousRent)}</TableCell>
-                  <TableCell>{c.bedroomType || "—"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
