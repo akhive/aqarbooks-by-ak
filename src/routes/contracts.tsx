@@ -274,7 +274,6 @@ function ContractsPage() {
         }
       />
 
-      {/* Filters */}
       <Card className="mb-4">
         <CardContent className="flex flex-wrap items-end gap-4 p-4">
           <div className="w-full max-w-[200px]">
@@ -400,7 +399,7 @@ function ContractsPage() {
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
                     <Link
-                      to="/contracts/$contractId"
+                      to="/contract/$contractId"
                       params={{ contractId: c.id }}
                       className="text-primary hover:underline"
                     >
@@ -458,7 +457,6 @@ function ContractsPage() {
         </CardContent>
       </Card>
 
-      {/* Add / Edit / Renew */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -583,7 +581,6 @@ function ContractsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* History */}
       <Dialog open={!!historyTenantId} onOpenChange={(o) => !o && setHistoryTenantId(null)}>
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
@@ -607,7 +604,7 @@ function ContractsPage() {
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
                     <Link
-                      to="/contracts/$contractId"
+                      to="/contract/$contractId"
                       params={{ contractId: c.id }}
                       className="text-primary hover:underline"
                       onClick={() => setHistoryTenantId(null)}
