@@ -261,4 +261,192 @@ function ContractDetailPage() {
               <span className="font-medium">{tenant?.name || "—"}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground
+              <span className="text-muted-foreground">Mobile</span>
+              <span>{tenant?.mobile || "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Unit</span>
+              <span className="font-medium">{unit?.flatNo || "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Building</span>
+              <span>{unit?.building || "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Bedroom Type</span>
+              <span>{contract.bedroomType || unit?.bedroomType || "—"}</span>
+            </div>
+            {contract.endedAt && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Ended / Vacated</span>
+                <span>{fmtDate(contract.endedAt)}</span>
+              </div>
+            )}
+            {contract.notes && (
+              <div>
+                <p className="text-muted-foreground">Notes</p>
+                <p>{contract.notes}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Payment summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Lease rent</span>
+              <span className="font-medium">{currency(contract.rent)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cheques total</span>
+              <span className="font-medium">{currency(chequeTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Difference</span>
+              <span className={chequeTotal === contract.rent ? "text-emerald-600" : "text-amber-600"}>
+                {currency(contract.rent - chequeTotal)}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Payment schedule (Cheques)</CardTitle>
+          <Button size="sm" variant="outline" onClick={() => setSplitOpen(true)}>
+            Generate split PDCs
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Cheque No</TableHead>
+                <TableHead>Bank</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-16"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {cheques.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    No cheques yet. Use Split PDCs.
+                  </TableCell>
+                </TableRow>
+              )}
+              {cheques.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
+                  <TableCell>{c.chequeNo || "—"}</TableCell>
+                  <TableCell>{c.bank || "—"}</TableCell>
+                  <TableCell className="text-right">{currency(c.amount)}</TableCell>
+                  <TableCell>{c.status}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={async () => {
+                        if (!confirm("Delete this cheque?")) return;
+                        await deleteCheque(c.id);
+                        toast.success("Deleted");
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Split rent into PDCs</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Lease rent {currency(contract.rent)} will be split equally.
+            </p>
+            <div>
+              <Label>Number of cheques</Label>
+              <Select value={String(splitCount)} onValueChange={(v) => setSplitCount(Number(v))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 6, 12].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n} × ~{currency(Math.round(contract.rent / n))}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>First cheque date</Label>
+              <Input type="date" value={firstDate} onChange={(e) => setFirstDate(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={generateSplit} disabled={saving}>
+              {saving ? "Creating..." : "Create cheques"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={actionOpen} onOpenChange={setActionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {actionType === "Ended"
+                ? "End contract / Vacate"
+                : actionType === "Cancelled"
+                  ? "Cancel contract"
+                  : "Break contract"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Effective date</Label>
+              <Input type="date" value={actionDate} onChange={(e) => setActionDate(e.target.value)} />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                value={actionNotes}
+                onChange={(e) => setActionNotes(e.target.value)}
+                placeholder="Reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setActionOpen(false)}>
+              Close
+            </Button>
+            <Button
+              variant={actionType === "Broken" ? "destructive" : "default"}
+              onClick={applyAction}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppShell>
+  );
+}
