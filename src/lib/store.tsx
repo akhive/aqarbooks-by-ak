@@ -7,6 +7,7 @@ export type Unit = {
   building: string;
   bedroomType: string;
   marketRent: number;
+  deletedAt?: string;
 };
 
 export type Tenant = {
@@ -115,6 +116,7 @@ const mapContract = (r: any): Contract => ({
   status: (r.status as ContractStatus) || "Active",
   notes: r.notes || "",
   endedAt: r.ended_at || "",
+  deletedAt: r.deleted_at || "",
 });
 
 const mapCheque = (r: any): Cheque => ({
@@ -192,7 +194,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setData({
         units: (unitsRes.data || []).map(mapUnit),
         tenants: (tenantsRes.data || []).map(mapTenant),
-        contracts: (contractsRes.data || []).map(mapContract),
+        contracts: (contractsRes.data || []).map(mapContract).filter((c) => !c.deletedAt),
         cheques: (chequesRes.data || []).map(mapCheque),
         expenses: (expensesRes.data || []).map(mapExpense),
       });
@@ -311,13 +313,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       deleteContract: async (id) => {
-        const { error } = await supabase.from("contracts").delete().eq("id", id);
-        if (error) throw error;
-        setData((p) => ({
-          ...p,
-          contracts: p.contracts.filter((x) => x.id !== id),
-        }));
+  const { error } = await supabase
+    .from("contracts")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+  setData((p) => ({
+    ...p,
+    contracts: p.contracts.filter((x) => x.id !== id),
+  }));
       },
+      restoreContract: async (id: string) => {
+  const { error } = await supabase
+    .from("contracts")
+    .update({ deleted_at: null })
+    .eq("id", id);
+  if (error) throw error;
+  await refresh();
+},
 
       addCheque: async (c) => {
         const { data: row, error } = await supabase
