@@ -373,14 +373,6 @@ function ContractsPage() {
                   <SortBtn k="rent" label="Rent" />
                 </TableHead>
                 <TableHead>
-                  <SortBtn k="previousRent" label="Previous Rent" />
-                </TableHead>
-                <TableHead>
-                  <SortBtn k="revenue" label="Revenue (This Year)" />
-                </TableHead>
-                <TableHead>
-                  <SortBtn k="deferred" label="Deferred" />
-                </TableHead>
                 <TableHead className="w-36"></TableHead>
               </TableRow>
             </TableHeader>
