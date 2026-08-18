@@ -170,10 +170,3 @@ function RootComponent() {
     </QueryClientProvider>
   );
 }
-// after data loaded successfully
-const day = new Date().toISOString().slice(0, 10);
-const flag = localStorage.getItem("aqar_auto_backup_day");
-if (flag !== day) {
-  // same fetchAll + saveAuto logic, or navigate user to click once
-  localStorage.setItem("aqar_auto_backup_day", day);
-}
