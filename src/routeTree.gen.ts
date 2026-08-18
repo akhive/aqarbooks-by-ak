@@ -94,7 +94,9 @@ export interface FileRoutesByFullPath {
   '/contract/$contractId': typeof ContractContractIdRoute
   '/expenses': typeof ExpensesRoute
   '/reconciliation': typeof ReconciliationRoute
+  '/backup': typeof BackupRoute
 }
+
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
@@ -106,7 +108,9 @@ export interface FileRoutesByTo {
   '/contract/$contractId': typeof ContractContractIdRoute
   '/expenses': typeof ExpensesRoute
   '/reconciliation': typeof ReconciliationRoute
+  '/backup': typeof BackupRoute
 }
+
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
@@ -119,7 +123,9 @@ export interface FileRoutesById {
   '/contract/$contractId': typeof ContractContractIdRoute
   '/expenses': typeof ExpensesRoute
   '/reconciliation': typeof ReconciliationRoute
+  '/backup': typeof BackupRoute
 }
+
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
@@ -133,6 +139,7 @@ export interface FileRouteTypes {
     | '/contract/$contractId'
     | '/expenses'
     | '/reconciliation'
+    | '/backup'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -145,6 +152,7 @@ export interface FileRouteTypes {
     | '/contract/$contractId'
     | '/expenses'
     | '/reconciliation'
+    | '/backup'
   id:
     | '__root__'
     | '/'
@@ -157,8 +165,10 @@ export interface FileRouteTypes {
     | '/contract/$contractId'
     | '/expenses'
     | '/reconciliation'
+    | '/backup'
   fileRoutesById: FileRoutesById
 }
+
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
@@ -170,6 +180,7 @@ export interface RootRouteChildren {
   ContractContractIdRoute: typeof ContractContractIdRoute
   ExpensesRoute: typeof ExpensesRoute
   ReconciliationRoute: typeof ReconciliationRoute
+  BackupRoute: typeof BackupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -244,6 +255,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReconciliationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/backup': {
+      id: '/backup'
+      path: '/backup'
+      fullPath: '/backup'
+      preLoaderRoute: typeof BackupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -258,6 +276,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContractContractIdRoute: ContractContractIdRoute,
   ExpensesRoute: ExpensesRoute,
   ReconciliationRoute: ReconciliationRoute,
+  BackupRoute: BackupRoute,
 }
 
 export const routeTree = rootRouteImport
