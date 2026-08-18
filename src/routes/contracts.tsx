@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { calcRevenue, currency, fmtDate, useStore, type Contract } from "@/lib/store";
+import { currency, fmtDate, useStore, type Contract } from "@/lib/store";
 
 export const Route = createFileRoute("/contracts")({
   head: () => ({
@@ -32,11 +32,7 @@ export const Route = createFileRoute("/contracts")({
 });
 
 type Form = Omit<Contract, "id">;
-type SortKey =
-  | "leaseNo"
-  | "unit"
-  | "period"
-  | "rent";
+type SortKey = "leaseNo" | "unit" | "period" | "rent";
 
 const empty: Form = {
   leaseNo: "",
@@ -138,16 +134,11 @@ function ContractsPage() {
   const rows = useMemo(() => {
     const q = unitSearch.trim().toLowerCase();
 
-    let list = data.contracts.map((c) => {
-      const rev = calcRevenue(c.startDate, c.endDate, c.rent);
-      return {
-        ...c,
-        unitLabel: unitFlat[c.unitId] || "—",
-        tenantName: tenantMap[c.tenantId] || "—",
-        revenue: rev.currentYear,
-        deferred: rev.deferred,
-      };
-    });
+    let list = data.contracts.map((c) => ({
+      ...c,
+      unitLabel: unitFlat[c.unitId] || "—",
+      tenantName: tenantMap[c.tenantId] || "—",
+    }));
 
     if (q) list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
     if (tenantFilter !== "all") list = list.filter((c) => c.tenantId === tenantFilter);
@@ -162,12 +153,6 @@ function ContractsPage() {
         cmp = (a.startDate || "").localeCompare(b.startDate || "");
       } else if (sortKey === "rent") {
         cmp = (a.rent || 0) - (b.rent || 0);
-      } else if (sortKey === "previousRent") {
-        cmp = (a.previousRent || 0) - (b.previousRent || 0);
-      } else if (sortKey === "revenue") {
-        cmp = (a.revenue || 0) - (b.revenue || 0);
-      } else if (sortKey === "deferred") {
-        cmp = (a.deferred || 0) - (b.deferred || 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -372,14 +357,13 @@ function ContractsPage() {
                 <TableHead>
                   <SortBtn k="rent" label="Rent" />
                 </TableHead>
-                <TableHead>
                 <TableHead className="w-36"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     No contracts found.
                   </TableCell>
                 </TableRow>
@@ -415,9 +399,6 @@ function ContractsPage() {
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
-                  <TableCell>{currency(c.previousRent)}</TableCell>
-                  <TableCell className="font-medium text-emerald-600">{currency(c.revenue)}</TableCell>
-                  <TableCell className="text-amber-600">{currency(c.deferred)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button size="icon" variant="ghost" title="Renew" onClick={() => startRenew(c)}>
@@ -541,22 +522,6 @@ function ContractsPage() {
                 <Input type="number" value={form.previousRent || ""} readOnly className="bg-muted" />
               </div>
             </div>
-            {form.startDate && form.endDate && form.rent > 0 && (
-              <div className="space-y-1 rounded-md bg-muted p-3 text-sm">
-                <div className="flex justify-between">
-                  <span>Revenue (This Year)</span>
-                  <strong className="text-emerald-600">
-                    {currency(calcRevenue(form.startDate, form.endDate, form.rent).currentYear)}
-                  </strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>Deferred Revenue</span>
-                  <strong className="text-amber-600">
-                    {currency(calcRevenue(form.startDate, form.endDate, form.rent).deferred)}
-                  </strong>
-                </div>
-              </div>
-            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
@@ -585,7 +550,6 @@ function ContractsPage() {
                 <TableHead>Status</TableHead>
                 <TableHead>Period</TableHead>
                 <TableHead>Rent</TableHead>
-                <TableHead>Previous</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -607,7 +571,6 @@ function ContractsPage() {
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
-                  <TableCell>{currency(c.previousRent)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
