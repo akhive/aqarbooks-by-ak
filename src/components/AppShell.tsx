@@ -1,4 +1,5 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   Building2,
   LayoutDashboard,
@@ -8,6 +9,8 @@ import {
   FileBarChart2,
   LogOut,
   Save,
+  Menu,
+  X,
 } from "lucide-react";
 import { supabase } from "../supabase";
 import { Button } from "@/components/ui/button";
@@ -21,11 +24,27 @@ const nav = [
   { to: "/units", label: "Units", icon: DoorOpen },
   { to: "/expenses", label: "Expenses", icon: Banknote },
   { to: "/reports", label: "Reports", icon: FileBarChart2 },
-  { to: "/backup", label: "Backup", icon: FileBarChart2 },
+  { to: "/backup", label: "Backup", icon: Save },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [open, setOpen] = useState(false);
+
+  // Close menu when route changes
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -34,39 +53,105 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-          <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Building2 className="size-5" />
-            </span>
-            <span className="leading-tight">
-              <span className="block text-base font-semibold tracking-tight">Aqar Books</span>
-              <span className="block text-xs text-muted-foreground">Built by AK</span>
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <nav className="-mx-1 flex gap-1 overflow-x-auto">
-              {nav.map(({ to, label, icon: Icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  activeOptions={{ exact: to === "/" }}
-                  className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                  activeProps={{ className: "bg-primary/10 text-primary hover:bg-primary/10" }}
-                >
-                  <Icon className="size-4" />
-                  {label}
-                </Link>
-              ))}
-            </nav>
-            <Button variant="outline" size="sm" onClick={logout} className="shrink-0">
-              <LogOut className="mr-1 size-4" />
-              Logout
+      {/* Top bar — only logo + menu button */}
+      <header className="sticky top-0 z-40 border-b border-border bg-card/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Open menu"
+              onClick={() => setOpen(true)}
+            >
+              <Menu className="size-5" />
             </Button>
+            <Link to="/" className="flex items-center gap-2.5">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Building2 className="size-5" />
+              </span>
+              <span className="leading-tight">
+                <span className="block text-base font-semibold tracking-tight">Aqar Books</span>
+                <span className="block text-xs text-muted-foreground">Built by AK</span>
+              </span>
+            </Link>
           </div>
+          <Button variant="outline" size="sm" onClick={logout}>
+            <LogOut className="mr-1 size-4" />
+            Logout
+          </Button>
         </div>
       </header>
+
+      {/* Dark overlay when menu is open */}
+      {open && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/40"
+          aria-label="Close menu"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* Side menu (hidden by default) */}
+      <aside
+        className={`fixed top-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-card shadow-xl transition-transform duration-200 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Building2 className="size-4" />
+            </span>
+            <span className="text-sm font-semibold">Menu</span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Close menu"
+            onClick={() => setOpen(false)}
+          >
+            <X className="size-5" />
+          </Button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto p-3">
+          <ul className="space-y-1">
+            {nav.map(({ to, label, icon: Icon }) => {
+              const active =
+                to === "/"
+                  ? pathname === "/"
+                  : pathname === to || pathname.startsWith(`${to}/`);
+              return (
+                <li key={to}>
+                  <Link
+                    to={to}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    }`}
+                    onClick={() => setOpen(false)}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        <div className="border-t border-border p-3">
+          <Button variant="outline" className="w-full justify-start" onClick={logout}>
+            <LogOut className="mr-2 size-4" />
+            Logout
+          </Button>
+        </div>
+      </aside>
+
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
     </div>
   );
