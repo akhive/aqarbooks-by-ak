@@ -1,5 +1,14 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, Users, Banknote, DoorOpen, FileBarChart2, LogOut, Save } from "lucide-react";
+import {
+  Building2,
+  LayoutDashboard,
+  Users,
+  Banknote,
+  DoorOpen,
+  FileBarChart2,
+  LogOut,
+  Save,
+} from "lucide-react";
 import { supabase } from "../supabase";
 import { Button } from "@/components/ui/button";
 
