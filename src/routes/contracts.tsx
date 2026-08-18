@@ -36,10 +36,7 @@ type SortKey =
   | "leaseNo"
   | "unit"
   | "period"
-  | "rent"
-  | "previousRent"
-  | "revenue"
-  | "deferred";
+  | "rent";
 
 const empty: Form = {
   leaseNo: "",
