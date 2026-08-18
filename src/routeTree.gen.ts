@@ -15,6 +15,7 @@ import { Route as ContractsRouteImport } from './routes/contracts'
 import { Route as ContractContractIdRouteImport } from './routes/contract.$contractId'
 import { Route as ExpensesRouteImport } from './routes/expenses'
 import { Route as ReconciliationRouteImport } from './routes/reconciliation'
+import { Route as BackupRouteImport } from './routes/backup'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -73,6 +74,12 @@ const ExpensesRoute = ExpensesRouteImport.update({
 const ReconciliationRoute = ReconciliationRouteImport.update({
   id: '/reconciliation',
   path: '/reconciliation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
+const BackupRoute = BackupRouteImport.update({
+  id: '/backup',
+  path: '/backup',
   getParentRoute: () => rootRouteImport,
 } as any)
 
