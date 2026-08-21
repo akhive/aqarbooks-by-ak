@@ -110,6 +110,19 @@ function ContractDetailPage() {
       .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
   }, [data.cheques, contractId, contract]);
 
+  const clearedRent = useMemo(
+    () => rentCheques.filter((c) => c.status === "Cleared" || c.status === "Deposited"),
+    [rentCheques],
+  );
+
+  const pendingReturnPdcs = useMemo(
+    () => rentCheques.filter((c) => c.status === "PDC"),
+    [rentCheques],
+  );
+
+  const receivedTotal = clearedRent.reduce((s, c) => s + c.amount, 0);
+  const pendingReturnTotal = pendingReturnPdcs.reduce((s, c) => s + c.amount, 0);
+
   const [banks, setBanks] = useState<string[]>([]);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitKind, setSplitKind] = useState<"rent" | "deposit">("rent");
@@ -137,7 +150,6 @@ function ContractDetailPage() {
     setBanks(loadBanks());
   }, []);
 
-  // rent/365 * days from start to break date
   useEffect(() => {
     if (!contract || !actionOpen) return;
     const days = dayCount(contract.startDate, breakDate);
@@ -145,16 +157,10 @@ function ContractDetailPage() {
     const received = rentCheques
       .filter((c) => c.status === "Cleared" || c.status === "Deposited")
       .reduce((s, c) => s + c.amount, 0);
-    const depHeld = contract.depositAmount || 0;
-    const refund = depositRefund;
-    // + receivable from tenant, − we pay tenant (includes deposit refund)
-    const bal = used + penalty + extra - received - refund;
+    const bal = used + penalty + extra - received - depositRefund;
     setCalcRent(used);
     setBalance(bal);
-    if (depositRefund === 0 && depHeld > 0 && actionOpen) {
-      // default full deposit refund once when opening
-    }
-  }, [contract, actionOpen, breakDate, penalty, extra, rentCheques, depositRefund]);
+  }, [contract, actionOpen, breakDate, penalty, extra, depositRefund, rentCheques]);
 
   if (loading) {
     return (
@@ -237,7 +243,7 @@ function ContractDetailPage() {
     try {
       const notes = [
         actionNotes,
-        `Settlement: days calc rent ${calcRent} (rent/365*days), penalty ${penalty}, extra ${extra}, deposit refund ${depositRefund}, balance ${balance}`,
+        `Settlement: calc ${calcRent} (rent/365*days), cleared ${receivedTotal}, pending PDC return ${pendingReturnTotal}, penalty ${penalty}, extra ${extra}, deposit refund ${depositRefund}, balance ${balance}`,
       ]
         .filter(Boolean)
         .join(" | ");
@@ -272,7 +278,7 @@ function ContractDetailPage() {
     setTimeout(() => {
       window.print();
       setPrintMode(false);
-    }, 200);
+    }, 250);
   };
 
   const saveChequeEdit = async () => {
@@ -323,7 +329,7 @@ function ContractDetailPage() {
         endedAt: "",
         depositAmount: contract.depositAmount || 0,
       });
-      toast.success(`Renewal lease ${next} created — set new rent on Contracts list or open it`);
+      toast.success(`Renewal lease ${next} created — set new rent on Contracts`);
       navigate({ to: "/contracts" });
     } catch (e: any) {
       toast.error(e.message || "Renew failed");
@@ -347,15 +353,9 @@ function ContractDetailPage() {
         ? "bg-slate-100 text-slate-800"
         : "bg-red-100 text-red-800";
 
-  const ChequeTable = ({
-    rows,
-    title,
-  }: {
-    rows: Cheque[];
-    title: string;
-  }) => (
+  const ChequeTable = ({ rows, title }: { rows: Cheque[]; title: string }) => (
     <Card className="no-print mb-4">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
@@ -437,11 +437,10 @@ function ContractDetailPage() {
 
   return (
     <AppShell>
-      {/* PRINTABLE SETTLEMENT — always in DOM for print */}
+      {/* PRINTABLE SETTLEMENT */}
       <div
         id="settlement-print"
-        className={printMode ? "block p-8" : "hidden"}
-        style={printMode ? undefined : { display: "none" }}
+        style={printMode ? { display: "block", padding: 24 } : { display: "none" }}
       >
         <div className="mb-6 flex items-center gap-3 border-b pb-4">
           <div className="flex size-12 items-center justify-center rounded-lg bg-black text-white font-bold">
@@ -462,12 +461,33 @@ function ContractDetailPage() {
           <strong>Unit:</strong> {unit?.flatNo}
         </p>
         <p>
-          <strong>Action:</strong> {actionType} · <strong>Date:</strong> {fmtDate(breakDate)}
+          <strong>Action:</strong> {actionType} · <strong>Break date:</strong> {fmtDate(breakDate)}
         </p>
         <p>
           <strong>Period:</strong> {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
         </p>
+        <p>
+          <strong>Days occupied:</strong> {dayCount(contract.startDate, breakDate)}
+        </p>
         <hr className="my-4" />
+        <p className="font-semibold">Collected (Cleared / Deposited)</p>
+        <ul className="mb-3 text-sm">
+          {clearedRent.length === 0 && <li>None</li>}
+          {clearedRent.map((c) => (
+            <li key={c.id}>
+              {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.bank || "—"} · {currency(c.amount)}
+            </li>
+          ))}
+        </ul>
+        <p className="font-semibold">Pending PDCs to return</p>
+        <ul className="mb-3 text-sm">
+          {pendingReturnPdcs.length === 0 && <li>None</li>}
+          {pendingReturnPdcs.map((c) => (
+            <li key={c.id}>
+              {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.bank || "—"} · {currency(c.amount)}
+            </li>
+          ))}
+        </ul>
         <table className="w-full text-sm">
           <tbody>
             <tr>
@@ -475,33 +495,25 @@ function ContractDetailPage() {
               <td className="text-right">{currency(contract.rent)}</td>
             </tr>
             <tr>
-              <td>Days occupied (start → break)</td>
-              <td className="text-right">{dayCount(contract.startDate, breakDate)}</td>
-            </tr>
-            <tr>
-              <td>Calculated rent (rent/365×days)</td>
+              <td>Calculated rent (rent÷365×days)</td>
               <td className="text-right">{currency(calcRent)}</td>
             </tr>
             <tr>
-              <td>Penalty</td>
-              <td className="text-right">{currency(penalty)}</td>
+              <td>Penalty + Extra</td>
+              <td className="text-right">{currency(penalty + extra)}</td>
             </tr>
             <tr>
-              <td>Extra charges</td>
-              <td className="text-right">{currency(extra)}</td>
+              <td>Collected (cleared)</td>
+              <td className="text-right">{currency(receivedTotal)}</td>
             </tr>
             <tr>
-              <td>Security deposit (held)</td>
-              <td className="text-right">{currency(contract.depositAmount || 0)}</td>
-            </tr>
-            <tr>
-              <td>Deposit refund to tenant</td>
+              <td>Deposit refund</td>
               <td className="text-right">{currency(depositRefund)}</td>
             </tr>
             <tr>
               <td className="pt-3 font-bold">Balance</td>
               <td className="pt-3 text-right font-bold">
-                {currency(balance)} {balance >= 0 ? "(Receivable)" : "(Payable / Refund)"}
+                {currency(balance)} {balance >= 0 ? "(Receivable)" : "(Payable)"}
               </td>
             </tr>
           </tbody>
@@ -607,10 +619,6 @@ function ContractDetailPage() {
                 <span className="font-medium">{unit?.flatNo || "—"}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Type</span>
-                <span>{contract.bedroomType || unit?.bedroomType || "—"}</span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-muted-foreground">Revenue / Deferred</span>
                 <span>
                   {currency(rev.currentYear)} / {currency(rev.deferred)}
@@ -627,11 +635,7 @@ function ContractDetailPage() {
               <div>
                 <Label>Security deposit (AED)</Label>
                 <div className="mt-1 flex gap-2">
-                  <Input
-                    type="number"
-                    defaultValue={contract.depositAmount || 0}
-                    id="dep-input"
-                  />
+                  <Input type="number" defaultValue={contract.depositAmount || 0} id="dep-input" />
                   <Button
                     type="button"
                     variant="outline"
@@ -660,7 +664,7 @@ function ContractDetailPage() {
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
       </div>
 
-      {/* Split dialog */}
+      {/* Split */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -670,7 +674,7 @@ function ContractDetailPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Amount {currency(baseAmount)} · dates across{" "}
+              Amount {currency(baseAmount)} ·{" "}
               {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
             </p>
             <div>
@@ -707,7 +711,7 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit cheque — includes DATE */}
+      {/* Edit cheque */}
       <Dialog open={!!editCheque} onOpenChange={(o) => !o && setEditCheque(null)}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -728,7 +732,6 @@ function ContractDetailPage() {
                 list="bank-list"
                 value={chequeBank}
                 onChange={(e) => setChequeBank(e.target.value)}
-                placeholder="Type or pick bank"
               />
               <datalist id="bank-list">
                 {banks.map((b) => (
@@ -756,7 +759,7 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Settlement dialog */}
+      {/* Settlement */}
       <Dialog open={actionOpen} onOpenChange={setActionOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -768,6 +771,7 @@ function ContractDetailPage() {
                   : "End / Vacate — Settlement"}
             </DialogTitle>
           </DialogHeader>
+
           <div className="space-y-3">
             <div>
               <Label>Break / end date</Label>
@@ -776,6 +780,7 @@ function ContractDetailPage() {
                 Days = {dayCount(contract.startDate, breakDate)} · Formula: rent ÷ 365 × days
               </p>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Calculated rent</Label>
@@ -810,6 +815,75 @@ function ContractDetailPage() {
                 />
               </div>
             </div>
+
+            <div className="rounded-md border p-3">
+              <p className="mb-2 text-sm font-medium">
+                Cheques collected (Cleared / Deposited) — {currency(receivedTotal)}
+              </p>
+              {clearedRent.length === 0 ? (
+                <p className="text-xs text-muted-foreground">None cleared yet.</p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {clearedRent.map((c) => (
+                    <li key={c.id} className="flex justify-between gap-2">
+                      <span>
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.bank || "—"}
+                      </span>
+                      <span className="font-medium">{currency(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="mb-2 text-sm font-medium text-amber-900">
+                Pending PDCs to return — {currency(pendingReturnTotal)}
+              </p>
+              {pendingReturnPdcs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No open PDCs.</p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {pendingReturnPdcs.map((c) => (
+                    <li key={c.id} className="flex justify-between gap-2">
+                      <span>
+                        {fmtDate(c.chequeDate)} · Chq {c.chequeNo || "—"} · {c.bank || "—"}
+                      </span>
+                      <span className="font-medium">{currency(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-xs text-amber-800">
+                Not counted as received. Return/cancel these cheques.
+              </p>
+            </div>
+
+            <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span>Calculated rent</span>
+                <span>{currency(calcRent)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>+ Penalty + Extra</span>
+                <span>{currency(penalty + extra)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>− Collected (cleared)</span>
+                <span>{currency(receivedTotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>− Deposit refund</span>
+                <span>{currency(depositRefund)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 font-semibold">
+                <span>Balance</span>
+                <span className={balance >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                  {currency(balance)} {balance >= 0 ? "(Receivable)" : "(Payable)"}
+                </span>
+              </div>
+            </div>
+
             <div>
               <Label>Balance (editable)</Label>
               <Input
@@ -817,19 +891,14 @@ function ContractDetailPage() {
                 value={balance}
                 onChange={(e) => setBalance(Number(e.target.value))}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                + receivable from tenant · − payable/refund to tenant (deposit refund included)
-              </p>
             </div>
+
             <div>
               <Label>Notes</Label>
               <Input value={actionNotes} onChange={(e) => setActionNotes(e.target.value)} />
             </div>
-            <div className="rounded-md bg-muted p-3 text-sm font-medium">
-              Balance: {currency(balance)}{" "}
-              {balance >= 0 ? "(Receivable)" : "(Payable)"}
-            </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={printSettlement}>
               <Printer className="mr-2 h-4 w-4" />
