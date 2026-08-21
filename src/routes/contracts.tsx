@@ -46,6 +46,7 @@ const empty: Form = {
   status: "Active",
   notes: "",
   endedAt: "",
+  depositAmount: 0,
 };
 
 function addDays(iso: string, days: number) {
