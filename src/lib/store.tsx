@@ -7,7 +7,6 @@ export type Unit = {
   building: string;
   bedroomType: string;
   marketRent: number;
-  deletedAt?: string;
 };
 
 export type Tenant = {
@@ -34,6 +33,8 @@ export type Contract = {
   status: ContractStatus;
   notes?: string;
   endedAt?: string;
+  deletedAt?: string;
+  depositAmount: number;
 };
 
 export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
@@ -49,6 +50,7 @@ export type Cheque = {
   status: ChequeStatus;
   clearedDate?: string;
   reconciled?: boolean;
+  kind?: "rent" | "deposit";
 };
 
 export type Expense = {
@@ -77,6 +79,7 @@ type Ctx = {
   addContract: (c: Omit<Contract, "id">) => Promise<void>;
   updateContract: (id: string, c: Omit<Contract, "id">) => Promise<void>;
   deleteContract: (id: string) => Promise<void>;
+  restoreContract: (id: string) => Promise<void>;
   addCheque: (c: Omit<Cheque, "id">) => Promise<void>;
   updateCheque: (id: string, c: Omit<Cheque, "id">) => Promise<void>;
   deleteCheque: (id: string) => Promise<void>;
@@ -117,6 +120,7 @@ const mapContract = (r: any): Contract => ({
   notes: r.notes || "",
   endedAt: r.ended_at || "",
   deletedAt: r.deleted_at || "",
+  depositAmount: Number(r.deposit_amount) || 0,
 });
 
 const mapCheque = (r: any): Cheque => ({
@@ -130,6 +134,7 @@ const mapCheque = (r: any): Cheque => ({
   status: r.status || "PDC",
   clearedDate: r.cleared_date || "",
   reconciled: r.reconciled || false,
+  kind: r.kind === "deposit" ? "deposit" : "rent",
 });
 
 const mapExpense = (r: any): Expense => ({
@@ -281,6 +286,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             status: c.status || "Active",
             notes: c.notes || null,
             ended_at: c.endedAt || null,
+            deposit_amount: c.depositAmount || 0,
           })
           .select()
           .single();
@@ -303,6 +309,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             status: c.status || "Active",
             notes: c.notes || null,
             ended_at: c.endedAt || null,
+            deposit_amount: c.depositAmount || 0,
           })
           .eq("id", id);
         if (error) throw error;
@@ -313,24 +320,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       deleteContract: async (id) => {
-  const { error } = await supabase
-    .from("contracts")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-  setData((p) => ({
-    ...p,
-    contracts: p.contracts.filter((x) => x.id !== id),
-  }));
+        const { error } = await supabase
+          .from("contracts")
+          .update({ deleted_at: new Date().toISOString() })
+          .eq("id", id);
+        if (error) throw error;
+        setData((p) => ({
+          ...p,
+          contracts: p.contracts.filter((x) => x.id !== id),
+        }));
       },
-      restoreContract: async (id: string) => {
-  const { error } = await supabase
-    .from("contracts")
-    .update({ deleted_at: null })
-    .eq("id", id);
-  if (error) throw error;
-  await refresh();
-},
+
+      restoreContract: async (id) => {
+        const { error } = await supabase
+          .from("contracts")
+          .update({ deleted_at: null })
+          .eq("id", id);
+        if (error) throw error;
+        await refresh();
+      },
 
       addCheque: async (c) => {
         const { data: row, error } = await supabase
@@ -345,6 +353,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             status: c.status,
             cleared_date: c.clearedDate || null,
             reconciled: c.reconciled || false,
+            kind: c.kind || "rent",
           })
           .select()
           .single();
@@ -365,6 +374,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             status: c.status,
             cleared_date: c.clearedDate || null,
             reconciled: c.reconciled || false,
+            kind: c.kind || "rent",
           })
           .eq("id", id);
         if (error) throw error;
