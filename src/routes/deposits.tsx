@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, fmtDate, useStore } from "@/lib/store";
+import { currency, useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/deposits")({
   component: DepositsPage,
