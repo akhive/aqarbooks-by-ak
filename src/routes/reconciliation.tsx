@@ -24,23 +24,52 @@ type SavedRecon = {
   statementBalance: number;
   periodFrom: string;
   periodTo: string;
-  notes: string;
 };
 
 function loadSaved(): SavedRecon {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        openingBalance: Number(p.openingBalance) || 0,
+        statementBalance: Number(p.statementBalance) || 0,
+        periodFrom: p.periodFrom || "",
+        periodTo: p.periodTo || "",
+      };
+    }
   } catch {
     /* ignore */
   }
-  return {
-    openingBalance: 0,
-    statementBalance: 0,
-    periodFrom: "",
-    periodTo: "",
-    notes: "",
-  };
+  return { openingBalance: 0, statementBalance: 0, periodFrom: "", periodTo: "" };
+}
+
+/** Accept yyyy-mm-dd or dd/mm/yyyy → store as yyyy-mm-dd */
+function parseClearanceDate(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return "";
+  // yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  // dd/mm/yyyy or dd-mm-yyyy
+  const m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    const dd = m[1].padStart(2, "0");
+    const mm = m[2].padStart(2, "0");
+    const yyyy = m[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return null; // invalid
+}
+
+function displayClearance(iso: string) {
+  if (!iso) return "";
+  // show as dd/mm/yyyy for typing comfort
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function ReconciliationPage() {
@@ -49,17 +78,25 @@ function ReconciliationPage() {
   const [statementBalance, setStatementBalance] = useState(0);
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
-  const [notes, setNotes] = useState("");
+  const [draftClearance, setDraftClearance] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const s = loadSaved();
-    setOpeningBalance(s.openingBalance || 0);
-    setStatementBalance(s.statementBalance || 0);
-    setPeriodFrom(s.periodFrom || "");
-    setPeriodTo(s.periodTo || "");
-    setNotes(s.notes || "");
+    setOpeningBalance(s.openingBalance);
+    setStatementBalance(s.statementBalance);
+    setPeriodFrom(s.periodFrom);
+    setPeriodTo(s.periodTo);
   }, []);
+
+  // keep draft text in sync when data loads
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    data.cheques.forEach((c) => {
+      next[c.id] = displayClearance(c.clearedDate || "");
+    });
+    setDraftClearance(next);
+  }, [data.cheques]);
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
@@ -79,35 +116,43 @@ function ReconciliationPage() {
   const difference = statementBalance - bookBalance;
 
   const saveStatement = () => {
-    const payload: SavedRecon = {
-      openingBalance,
-      statementBalance,
-      periodFrom,
-      periodTo,
-      notes,
-    };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      toast.success("Reconciliation saved — opening balance kept for next time");
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          openingBalance,
+          statementBalance,
+          periodFrom,
+          periodTo,
+        }),
+      );
+      toast.success("Saved — opening balance kept for next month");
     } catch {
       toast.error("Could not save");
     }
   };
 
-  /** Enter clearance date → status becomes Cleared automatically */
-  const setClearanceDate = async (chequeId: string, date: string) => {
+  const commitClearance = async (chequeId: string, typed: string) => {
     const ch = data.cheques.find((c) => c.id === chequeId);
     if (!ch) return;
+
+    const parsed = parseClearanceDate(typed);
+    if (parsed === null) {
+      toast.error("Use dd/mm/yyyy or yyyy-mm-dd");
+      setDraftClearance((d) => ({ ...d, [chequeId]: displayClearance(ch.clearedDate || "") }));
+      return;
+    }
+
     setSaving(true);
     try {
-      if (date) {
+      if (parsed) {
         await updateCheque(chequeId, {
           ...ch,
-          clearedDate: date,
+          clearedDate: parsed,
           status: "Cleared",
           reconciled: true,
         });
-        toast.success("Cheque cleared");
+        toast.success("Cleared");
       } else {
         await updateCheque(chequeId, {
           ...ch,
@@ -115,11 +160,11 @@ function ReconciliationPage() {
           status: "PDC",
           reconciled: false,
         });
-        toast.message("Clearance removed — back to PDC");
+        toast.message("Clearance removed");
       }
       await refresh();
     } catch (e: any) {
-      toast.error(e.message || "Failed to update");
+      toast.error(e.message || "Failed");
     } finally {
       setSaving(false);
     }
@@ -148,12 +193,12 @@ function ReconciliationPage() {
       <div className="no-print">
         <PageHeader
           title="Bank Reconciliation"
-          description="Enter clearance date on each cheque — status becomes Cleared automatically"
+          description="Type clearance date (dd/mm/yyyy) — status becomes Cleared"
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={saveStatement}>
                 <Save className="mr-2 h-4 w-4" />
-                Save statement
+                Save
               </Button>
               <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" />
@@ -190,40 +235,12 @@ function ReconciliationPage() {
               onChange={(e) => setStatementBalance(Number(e.target.value))}
             />
           </div>
-          <div className="sm:col-span-2">
-            <Label>Notes</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Month-end notes" />
-          </div>
         </CardContent>
       </Card>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Cleared in period</p>
-            <p className="text-lg font-semibold">{currency(clearedTotal)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Balance as per books</p>
-            <p className="text-lg font-semibold">{currency(bookBalance)}</p>
-            <p className="text-xs text-muted-foreground">Opening + cleared</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Difference (bank − books)</p>
-            <p className={`text-lg font-semibold ${difference === 0 ? "text-emerald-600" : "text-amber-600"}`}>
-              {currency(difference)}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
+      <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="text-base">Cheques — enter clearance date to mark Cleared</CardTitle>
+          <CardTitle className="text-base">Cheques</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -255,13 +272,25 @@ function ReconciliationPage() {
                   <TableCell className="text-right">{currency(c.amount)}</TableCell>
                   <TableCell>
                     <Input
-                      type="date"
-                      className="no-print w-[150px]"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="dd/mm/yyyy"
+                      className="no-print w-[120px]"
                       disabled={saving}
-                      value={c.clearedDate || ""}
-                      onChange={(e) => setClearanceDate(c.id, e.target.value)}
+                      value={draftClearance[c.id] ?? ""}
+                      onChange={(e) =>
+                        setDraftClearance((d) => ({ ...d, [c.id]: e.target.value }))
+                      }
+                      onBlur={() => commitClearance(c.id, draftClearance[c.id] ?? "")}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.currentTarget.blur();
+                        }
+                      }}
                     />
-                    <span className="hidden print:inline">{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</span>
+                    <span className="hidden print:inline">
+                      {c.clearedDate ? displayClearance(c.clearedDate) : "—"}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <span
@@ -280,6 +309,48 @@ function ReconciliationPage() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* Calculation details — bottom */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Reconciliation summary</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between border-b py-2">
+            <span className="text-muted-foreground">Period</span>
+            <span className="font-medium">{periodLabel}</span>
+          </div>
+          <div className="flex justify-between border-b py-2">
+            <span className="text-muted-foreground">Opening balance</span>
+            <span className="font-medium">{currency(openingBalance)}</span>
+          </div>
+          <div className="flex justify-between border-b py-2">
+            <span className="text-muted-foreground">(+) Cheques cleared in period</span>
+            <span className="font-medium">{currency(clearedTotal)}</span>
+          </div>
+          <div className="flex justify-between border-b py-2">
+            <span className="font-medium">Balance as per books</span>
+            <span className="font-semibold">{currency(bookBalance)}</span>
+          </div>
+          <div className="flex justify-between border-b py-2">
+            <span className="text-muted-foreground">Balance as per bank statement</span>
+            <span className="font-medium">{currency(statementBalance)}</span>
+          </div>
+          <div className="flex justify-between py-2">
+            <span className="font-medium">Difference (bank − books)</span>
+            <span
+              className={`font-semibold ${
+                difference === 0 ? "text-emerald-600" : "text-amber-600"
+              }`}
+            >
+              {currency(difference)}
+            </span>
+          </div>
+          {difference === 0 && (
+            <p className="text-xs text-emerald-600">Reconciled — balances match.</p>
+          )}
         </CardContent>
       </Card>
 
