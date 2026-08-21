@@ -289,3 +289,40 @@ declare module '@tanstack/react-router' {
       fullPath: '/backup'
       preLoaderRoute: typeof BackupRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/banks': {
+      id: '/banks'
+      path: '/banks'
+      fullPath: '/banks'
+      preLoaderRoute: typeof BanksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deposits': {
+      id: '/deposits'
+      path: '/deposits'
+      fullPath: '/deposits'
+      preLoaderRoute: typeof DepositsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
+}
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
+  ChequesRoute: ChequesRoute,
+  ReportsRoute: ReportsRoute,
+  TenantsRoute: TenantsRoute,
+  UnitsRoute: UnitsRoute,
+  ContractsRoute: ContractsRoute,
+  ContractContractIdRoute: ContractContractIdRoute,
+  ExpensesRoute: ExpensesRoute,
+  ReconciliationRoute: ReconciliationRoute,
+  BackupRoute: BackupRoute,
+  BanksRoute: BanksRoute,
+  DepositsRoute: DepositsRoute,
+}
+
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
