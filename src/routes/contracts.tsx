@@ -198,6 +198,7 @@ function ContractsPage() {
       status: "Active",
       notes: "",
       endedAt: "",
+      depositAmount: c.depositAmount || 0,
     });
     setError("");
     setOpen(true);
