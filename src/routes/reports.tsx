@@ -46,15 +46,7 @@ function exportCSV(filename: string, headers: string[], rows: (string | number)[
   URL.revokeObjectURL(url);
 }
 
-function ReportActions({
-  title,
-  period,
-  onExport,
-}: {
-  title: string;
-  period?: string;
-  onExport: () => void;
-}) {
+function ReportActions({ onExport }: { title?: string; period?: string; onExport: () => void }) {
   return (
     <div className="flex flex-wrap gap-2 no-print">
       <Button variant="outline" size="sm" onClick={onExport}>
@@ -77,11 +69,10 @@ function ReportsPage() {
 
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-
-  // Sorting state (inside component)
   const [leaseSort, setLeaseSort] = useState<"asc" | "desc">("asc");
   const [incomeSort, setIncomeSort] = useState<"asc" | "desc">("asc");
   const [pdcSort, setPdcSort] = useState<"asc" | "desc">("asc");
+  const [depositSort, setDepositSort] = useState<"asc" | "desc">("asc");
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
   const unitLabel = (id: string) => {
@@ -92,14 +83,13 @@ function ReportsPage() {
   const periodLabel =
     from || to ? `${from ? fmtDate(from) : "…"} → ${to ? fmtDate(to) : "…"}` : "All periods";
 
-  // Lease report
   const leaseRows = useMemo(() => {
     const rows = data.contracts.filter((c) => {
       if (from && c.endDate < from) return false;
       if (to && c.startDate > to) return false;
       return true;
     });
-    return rows.sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const an = a.leaseNo || "";
       const bn = b.leaseNo || "";
       return leaseSort === "asc"
@@ -110,7 +100,6 @@ function ReportsPage() {
 
   const leaseTotal = leaseRows.reduce((s, c) => s + c.rent, 0);
 
-  // Income breakdown
   const incomeRows = useMemo(() => {
     const rows = data.contracts
       .filter((c) => {
@@ -128,7 +117,7 @@ function ReportsPage() {
         });
         return { ...c, previous, current, deferred, total: c.rent };
       });
-    return rows.sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const an = a.leaseNo || "";
       const bn = b.leaseNo || "";
       return incomeSort === "asc"
@@ -137,36 +126,21 @@ function ReportsPage() {
     });
   }, [data.contracts, year, prevYear, from, to, incomeSort]);
 
-  const incomeTotals = useMemo(
-    () =>
-      incomeRows.reduce(
-        (s, r) => ({
-          previous: s.previous + r.previous,
-          current: s.current + r.current,
-          deferred: s.deferred + r.deferred,
-          total: s.total + r.total,
-        }),
-        { previous: 0, current: 0, deferred: 0, total: 0 },
-      ),
-    [incomeRows],
-  );
-
-  // Upcoming PDCs
   const upcoming = useMemo(() => {
     const rows = data.cheques.filter((c) => {
       if (c.status !== "PDC") return false;
+      if ((c.kind || "rent") === "deposit") return false;
       if (from && c.chequeDate < from) return false;
       if (to && c.chequeDate > to) return false;
       return true;
     });
-    return rows.sort((a, b) =>
+    return [...rows].sort((a, b) =>
       pdcSort === "asc"
-        ? a.chequeDate.localeCompare(b.chequeDate)
-        : b.chequeDate.localeCompare(a.chequeDate),
+        ? (a.chequeDate || "").localeCompare(b.chequeDate || "")
+        : (b.chequeDate || "").localeCompare(a.chequeDate || ""),
     );
   }, [data.cheques, from, to, pdcSort]);
 
-  // Yearly profit
   const yearly = useMemo(() => {
     const map = new Map<number, { income: number; expense: number }>();
     data.contracts.forEach((c) => {
@@ -192,11 +166,11 @@ function ReportsPage() {
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [data.contracts, data.expenses, from, to]);
 
-  // Renewals
   const renewals = useMemo(
     () =>
       data.contracts
         .filter((c) => {
+          if ((c.status || "Active") !== "Active") return false;
           const d = daysUntil(c.endDate);
           if (d < 0 || d > 120) return false;
           if (from && c.endDate < from) return false;
@@ -207,23 +181,55 @@ function ReportsPage() {
     [data.contracts, from, to],
   );
 
-  // Vacant
   const vacant = useMemo(() => {
-    const occupiedUnitIds = new Set(
+    const occupied = new Set(
       data.contracts
-        .filter((c) => c.startDate <= today && c.endDate >= today)
+        .filter((c) => (c.status || "Active") === "Active" && c.startDate <= today && c.endDate >= today)
         .map((c) => c.unitId)
         .filter(Boolean),
     );
-    return data.units.filter((u) => !occupiedUnitIds.has(u.id));
+    return data.units.filter((u) => !occupied.has(u.id));
   }, [data.units, data.contracts, today]);
+
+  const depositRows = useMemo(() => {
+    const rows = data.cheques
+      .filter((c) => c.kind === "deposit")
+      .map((c) => {
+        const contract = data.contracts.find((x) => x.id === c.contractId);
+        return {
+          id: c.id,
+          leaseNo: contract?.leaseNo || "",
+          tenantId: c.tenantId || contract?.tenantId || "",
+          unitId: contract?.unitId || "",
+          startDate: contract?.startDate || "",
+          endDate: contract?.endDate || "",
+          chequeNo: c.chequeNo || "",
+          bank: c.bank || "",
+          depositAmount: c.amount || 0,
+        };
+      })
+      .filter((r) => {
+        if (from && r.endDate && r.endDate < from) return false;
+        if (to && r.startDate && r.startDate > to) return false;
+        return true;
+      });
+
+    return [...rows].sort((a, b) => {
+      const an = a.leaseNo || "";
+      const bn = b.leaseNo || "";
+      return depositSort === "asc"
+        ? an.localeCompare(bn, undefined, { numeric: true })
+        : bn.localeCompare(an, undefined, { numeric: true });
+    });
+  }, [data.cheques, data.contracts, from, to, depositSort]);
+
+  const depositTotal = depositRows.reduce((s, r) => s + r.depositAmount, 0);
 
   return (
     <AppShell>
-      {/* Print header */}
-      <div className="print-only hidden print:block mb-6 border-b pb-4">
+      <div className="print-only mb-6 hidden border-b pb-4 print:block">
         <div className="flex items-start gap-4">
-          <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
+          <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
             AK
           </div>
           <div>
@@ -237,11 +243,10 @@ function ReportsPage() {
       <div className="no-print">
         <PageHeader
           title="Reports"
-          description="All reports with period filter, sorting, Excel export and Print/PDF"
+          description="Period filter, Excel export and Print/PDF for every report"
         />
       </div>
 
-      {/* Global period filter */}
       <Card className="mb-4 no-print">
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div>
@@ -261,35 +266,34 @@ function ReportsPage() {
           >
             Clear period
           </Button>
-          <p className="text-sm text-muted-foreground self-center">
+          <p className="self-center text-sm text-muted-foreground">
             Active period: <strong>{periodLabel}</strong>
           </p>
         </CardContent>
       </Card>
 
       <Tabs defaultValue="lease">
-        <TabsList className="flex-wrap no-print">
+        <TabsList className="no-print flex-wrap h-auto">
           <TabsTrigger value="lease">Lease report</TabsTrigger>
           <TabsTrigger value="income">Income breakdown</TabsTrigger>
           <TabsTrigger value="pdc">Upcoming PDCs</TabsTrigger>
           <TabsTrigger value="profit">Yearly profit</TabsTrigger>
           <TabsTrigger value="renewal">Contract renewals</TabsTrigger>
           <TabsTrigger value="vacant">Vacant units</TabsTrigger>
+          <TabsTrigger value="deposit">Deposits</TabsTrigger>
         </TabsList>
 
-        {/* LEASE REPORT */}
+        {/* Lease */}
         <TabsContent value="lease">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Lease report</CardTitle>
                 <CardDescription>
-                  {leaseRows.length} contract(s) · Total rent {currency(leaseTotal)}
+                  {leaseRows.length} contract(s) · Total {currency(leaseTotal)}
                 </CardDescription>
               </div>
               <ReportActions
-                title="Lease Report"
-                period={periodLabel}
                 onExport={() =>
                   exportCSV(
                     `lease_report.csv`,
@@ -313,7 +317,7 @@ function ReportsPage() {
                     <TableHead>
                       <button
                         type="button"
-                        className="flex items-center gap-1 font-medium hover:underline"
+                        className="font-medium hover:underline"
                         onClick={() => setLeaseSort((s) => (s === "asc" ? "desc" : "asc"))}
                       >
                         Lease No {leaseSort === "asc" ? "↑" : "↓"}
@@ -356,7 +360,7 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* INCOME BREAKDOWN */}
+        {/* Income */}
         <TabsContent value="income">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -367,8 +371,6 @@ function ReportsPage() {
                 </CardDescription>
               </div>
               <ReportActions
-                title="Income Breakdown"
-                period={periodLabel}
                 onExport={() =>
                   exportCSV(
                     `income_breakdown.csv`,
@@ -392,7 +394,7 @@ function ReportsPage() {
                     <TableHead>
                       <button
                         type="button"
-                        className="flex items-center gap-1 font-medium hover:underline"
+                        className="font-medium hover:underline"
                         onClick={() => setIncomeSort((s) => (s === "asc" ? "desc" : "asc"))}
                       >
                         Lease No {incomeSort === "asc" ? "↑" : "↓"}
@@ -416,27 +418,12 @@ function ReportsPage() {
                       </TableCell>
                       <TableCell className="text-right">{currency(r.total)}</TableCell>
                       <TableCell className="text-right">{currency(r.previous)}</TableCell>
-                      <TableCell className="text-right text-emerald-600 font-medium">
+                      <TableCell className="text-right font-medium text-emerald-600">
                         {currency(r.current)}
                       </TableCell>
-                      <TableCell className="text-right text-amber-600">
-                        {currency(r.deferred)}
-                      </TableCell>
+                      <TableCell className="text-right text-amber-600">{currency(r.deferred)}</TableCell>
                     </TableRow>
                   ))}
-                  {incomeRows.length > 0 && (
-                    <TableRow className="bg-muted/40 font-semibold">
-                      <TableCell colSpan={3}>TOTAL</TableCell>
-                      <TableCell className="text-right">{currency(incomeTotals.total)}</TableCell>
-                      <TableCell className="text-right">{currency(incomeTotals.previous)}</TableCell>
-                      <TableCell className="text-right text-emerald-600">
-                        {currency(incomeTotals.current)}
-                      </TableCell>
-                      <TableCell className="text-right text-amber-600">
-                        {currency(incomeTotals.deferred)}
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -449,14 +436,9 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Upcoming PDCs</CardTitle>
-                <CardDescription>
-                  {upcoming.length} cheque(s) ·{" "}
-                  {currency(upcoming.reduce((s, c) => s + c.amount, 0))}
-                </CardDescription>
+                <CardDescription>{upcoming.length} cheque(s)</CardDescription>
               </div>
               <ReportActions
-                title="Upcoming PDCs"
-                period={periodLabel}
                 onExport={() =>
                   exportCSV(
                     `upcoming_pdcs.csv`,
@@ -480,7 +462,7 @@ function ReportsPage() {
                     <TableHead>
                       <button
                         type="button"
-                        className="flex items-center gap-1 font-medium hover:underline"
+                        className="font-medium hover:underline"
                         onClick={() => setPdcSort((s) => (s === "asc" ? "desc" : "asc"))}
                       >
                         Date {pdcSort === "asc" ? "↑" : "↓"}
@@ -510,26 +492,20 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Yearly profit */}
+        {/* Profit */}
         <TabsContent value="profit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Yearly profit</CardTitle>
-                <CardDescription>Contract revenue − Expenses</CardDescription>
+                <CardDescription>Income from leases (accrual) minus expenses</CardDescription>
               </div>
               <ReportActions
-                title="Yearly Profit"
-                period={periodLabel}
                 onExport={() =>
                   exportCSV(
                     `yearly_profit.csv`,
-                    ["Year", "Income", "Expenses", "Profit", "Margin %"],
-                    yearly.map(([yr, r]) => {
-                      const profit = r.income - r.expense;
-                      const margin = r.income ? Math.round((profit / r.income) * 100) : 0;
-                      return [yr, r.income, r.expense, profit, margin];
-                    }),
+                    ["Year", "Income", "Expense", "Profit"],
+                    yearly.map(([y, r]) => [y, r.income, r.expense, r.income - r.expense]),
                   )
                 }
               />
@@ -540,35 +516,21 @@ function ReportsPage() {
                   <TableRow>
                     <TableHead>Year</TableHead>
                     <TableHead className="text-right">Income</TableHead>
-                    <TableHead className="text-right">Expenses</TableHead>
+                    <TableHead className="text-right">Expense</TableHead>
                     <TableHead className="text-right">Profit</TableHead>
-                    <TableHead className="text-right">Margin</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {yearly.map(([yr, r]) => {
-                    const profit = r.income - r.expense;
-                    return (
-                      <TableRow key={yr}>
-                        <TableCell className="font-medium">
-                          {yr}
-                          {yr === year ? " (current)" : ""}
-                        </TableCell>
-                        <TableCell className="text-right">{currency(r.income)}</TableCell>
-                        <TableCell className="text-right">{currency(r.expense)}</TableCell>
-                        <TableCell
-                          className={`text-right font-semibold ${
-                            profit >= 0 ? "text-emerald-600" : "text-destructive"
-                          }`}
-                        >
-                          {currency(profit)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {r.income ? `${Math.round((profit / r.income) * 100)}%` : "—"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {yearly.map(([y, r]) => (
+                    <TableRow key={y}>
+                      <TableCell className="font-medium">{y}</TableCell>
+                      <TableCell className="text-right">{currency(r.income)}</TableCell>
+                      <TableCell className="text-right text-red-600">{currency(r.expense)}</TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {currency(r.income - r.expense)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>
@@ -580,12 +542,10 @@ function ReportsPage() {
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle className="text-base">Contract renewals (≤ 120 days)</CardTitle>
-                <CardDescription>{renewals.length} contract(s)</CardDescription>
+                <CardTitle className="text-base">Contract renewals</CardTitle>
+                <CardDescription>Ending within 120 days · {renewals.length}</CardDescription>
               </div>
               <ReportActions
-                title="Contract Renewals"
-                period={periodLabel}
                 onExport={() =>
                   exportCSV(
                     `contract_renewals.csv`,
@@ -609,7 +569,7 @@ function ReportsPage() {
                     <TableHead>Lease No</TableHead>
                     <TableHead>Tenant</TableHead>
                     <TableHead>Unit</TableHead>
-                    <TableHead>End Date</TableHead>
+                    <TableHead>End</TableHead>
                     <TableHead>Rent</TableHead>
                     <TableHead className="text-right">Days left</TableHead>
                   </TableRow>
@@ -640,8 +600,6 @@ function ReportsPage() {
                 <CardDescription>{vacant.length} unit(s) with no active contract</CardDescription>
               </div>
               <ReportActions
-                title="Vacant Units"
-                period={periodLabel}
                 onExport={() =>
                   exportCSV(
                     `vacant_units.csv`,
@@ -675,13 +633,105 @@ function ReportsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Deposits */}
+        <TabsContent value="deposit">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">Deposit report</CardTitle>
+                <CardDescription>
+                  {depositRows.length} deposit cheque(s) · Total {currency(depositTotal)}
+                </CardDescription>
+              </div>
+              <ReportActions
+                onExport={() =>
+                  exportCSV(
+                    `deposit_report.csv`,
+                    [
+                      "Lease No",
+                      "Tenant",
+                      "Unit",
+                      "Start",
+                      "End",
+                      "Cheque No",
+                      "Bank",
+                      "Deposit Amount",
+                    ],
+                    depositRows.map((r) => [
+                      r.leaseNo,
+                      tenantName(r.tenantId),
+                      unitLabel(r.unitId),
+                      r.startDate,
+                      r.endDate,
+                      r.chequeNo,
+                      r.bank,
+                      r.depositAmount,
+                    ]),
+                  )
+                }
+              />
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="font-medium hover:underline"
+                        onClick={() => setDepositSort((s) => (s === "asc" ? "desc" : "asc"))}
+                      >
+                        Lease No {depositSort === "asc" ? "↑" : "↓"}
+                      </button>
+                    </TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead>Cheque no.</TableHead>
+                    <TableHead>Bank</TableHead>
+                    <TableHead className="text-right">Deposit Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {depositRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                        No deposit cheques. Open a lease → Split deposit.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {depositRows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
+                      <TableCell>{tenantName(r.tenantId)}</TableCell>
+                      <TableCell>{unitLabel(r.unitId)}</TableCell>
+                      <TableCell>{fmtDate(r.startDate)}</TableCell>
+                      <TableCell>{fmtDate(r.endDate)}</TableCell>
+                      <TableCell>{r.chequeNo || "—"}</TableCell>
+                      <TableCell>{r.bank || "—"}</TableCell>
+                      <TableCell className="text-right">{currency(r.depositAmount)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {depositRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={7}>TOTAL</TableCell>
+                      <TableCell className="text-right">{currency(depositTotal)}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       <style>{`
         @media print {
           .no-print { display: none !important; }
           .print-only { display: block !important; }
-          header, nav { display: none !important; }
+          header, nav, aside { display: none !important; }
           body { background: white; }
         }
       `}</style>
