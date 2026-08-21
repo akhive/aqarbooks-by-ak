@@ -12,17 +12,15 @@ export const Route = createFileRoute("/banks")({
 
 const KEY = "aqar_bank_names";
 
-export default function BanksPage() {
-  return null;
-}
-
 function BanksPage() {
   const [list, setList] = useState<string[]>([]);
   const [name, setName] = useState("");
 
   useEffect(() => {
     try {
-      setList(JSON.parse(localStorage.getItem(KEY) || "[]"));
+      const raw = localStorage.getItem(KEY);
+      if (raw) setList(JSON.parse(raw));
+      else setList(["ENBD", "FAB", "ADCB", "Mashreq", "Dubai Islamic Bank"]);
     } catch {
       setList(["ENBD", "FAB", "ADCB"]);
     }
