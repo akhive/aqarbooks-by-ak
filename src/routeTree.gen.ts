@@ -16,6 +16,8 @@ import { Route as ContractContractIdRouteImport } from './routes/contract.$contr
 import { Route as ExpensesRouteImport } from './routes/expenses'
 import { Route as ReconciliationRouteImport } from './routes/reconciliation'
 import { Route as BackupRouteImport } from './routes/backup'
+import { Route as BanksRouteImport } from './routes/banks'
+import { Route as DepositsRouteImport } from './routes/deposits'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -83,6 +85,18 @@ const BackupRoute = BackupRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 
+const BanksRoute = BanksRouteImport.update({
+  id: '/banks',
+  path: '/banks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
+const DepositsRoute = DepositsRouteImport.update({
+  id: '/deposits',
+  path: '/deposits',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
@@ -95,6 +109,8 @@ export interface FileRoutesByFullPath {
   '/expenses': typeof ExpensesRoute
   '/reconciliation': typeof ReconciliationRoute
   '/backup': typeof BackupRoute
+  '/banks': typeof BanksRoute
+  '/deposits': typeof DepositsRoute
 }
 
 export interface FileRoutesByTo {
@@ -109,6 +125,8 @@ export interface FileRoutesByTo {
   '/expenses': typeof ExpensesRoute
   '/reconciliation': typeof ReconciliationRoute
   '/backup': typeof BackupRoute
+  '/banks': typeof BanksRoute
+  '/deposits': typeof DepositsRoute
 }
 
 export interface FileRoutesById {
@@ -124,6 +142,8 @@ export interface FileRoutesById {
   '/expenses': typeof ExpensesRoute
   '/reconciliation': typeof ReconciliationRoute
   '/backup': typeof BackupRoute
+  '/banks': typeof BanksRoute
+  '/deposits': typeof DepositsRoute
 }
 
 export interface FileRouteTypes {
@@ -140,6 +160,8 @@ export interface FileRouteTypes {
     | '/expenses'
     | '/reconciliation'
     | '/backup'
+    | '/banks'
+    | '/deposits'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -153,6 +175,8 @@ export interface FileRouteTypes {
     | '/expenses'
     | '/reconciliation'
     | '/backup'
+    | '/banks'
+    | '/deposits'
   id:
     | '__root__'
     | '/'
@@ -166,6 +190,8 @@ export interface FileRouteTypes {
     | '/expenses'
     | '/reconciliation'
     | '/backup'
+    | '/banks'
+    | '/deposits'
   fileRoutesById: FileRoutesById
 }
 
@@ -181,6 +207,8 @@ export interface RootRouteChildren {
   ExpensesRoute: typeof ExpensesRoute
   ReconciliationRoute: typeof ReconciliationRoute
   BackupRoute: typeof BackupRoute
+  BanksRoute: typeof BanksRoute
+  DepositsRoute: typeof DepositsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -261,24 +289,3 @@ declare module '@tanstack/react-router' {
       fullPath: '/backup'
       preLoaderRoute: typeof BackupRouteImport
       parentRoute: typeof rootRouteImport
-    }
-  }
-}
-
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  LoginRoute: LoginRoute,
-  ChequesRoute: ChequesRoute,
-  ReportsRoute: ReportsRoute,
-  TenantsRoute: TenantsRoute,
-  UnitsRoute: UnitsRoute,
-  ContractsRoute: ContractsRoute,
-  ContractContractIdRoute: ContractContractIdRoute,
-  ExpensesRoute: ExpensesRoute,
-  ReconciliationRoute: ReconciliationRoute,
-  BackupRoute: BackupRoute,
-}
-
-export const routeTree = rootRouteImport
-  ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
