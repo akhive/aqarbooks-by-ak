@@ -1,215 +1,145 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { Printer, Save } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currency, fmtDate, useStore } from "@/lib/store";
-import { supabase } from "../supabase";
 
 export const Route = createFileRoute("/reconciliation")({
   head: () => ({
-    meta: [{ title: "Bank Reconciliation — Estate Manager" }],
+    meta: [{ title: "Bank Reconciliation — Aqar Books" }],
   }),
   component: ReconciliationPage,
 });
 
-type Row = {
-  id: string;
-  date: string;
-  particular: string;
-  type: "Cheque" | "Expense";
-  chequeNo?: string;
-  bank?: string;
-  status?: string;
-  clearedDate?: string;
-  deposit: number;
-  withdrawal: number;
-  ref: any;
+const STORAGE_KEY = "aqar_bank_recon";
+
+type SavedRecon = {
+  openingBalance: number;
+  statementBalance: number;
+  periodFrom: string;
+  periodTo: string;
+  notes: string;
 };
 
+function loadSaved(): SavedRecon {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return {
+    openingBalance: 0,
+    statementBalance: 0,
+    periodFrom: "",
+    periodTo: "",
+    notes: "",
+  };
+}
+
 function ReconciliationPage() {
-  const { data, updateCheque } = useStore();
-
-  const today = new Date().toISOString().slice(0, 10);
-  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    .toISOString()
-    .slice(0, 10);
-
-  const [from, setFrom] = useState(firstOfMonth);
-  const [to, setTo] = useState(today);
-  const [clearedDate, setClearedDate] = useState(today);
+  const { data, updateCheque, refresh } = useStore();
   const [openingBalance, setOpeningBalance] = useState(0);
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [statementBalance, setStatementBalance] = useState(0);
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-  const [loadingBal, setLoadingBal] = useState(false);
+
+  useEffect(() => {
+    const s = loadSaved();
+    setOpeningBalance(s.openingBalance || 0);
+    setStatementBalance(s.statementBalance || 0);
+    setPeriodFrom(s.periodFrom || "");
+    setPeriodTo(s.periodTo || "");
+    setNotes(s.notes || "");
+  }, []);
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
-  // Load saved balance for this period (or previous closing)
-  useEffect(() => {
-    const load = async () => {
-      if (!from || !to) return;
-      setLoadingBal(true);
-      try {
-        const { data: row } = await supabase
-          .from("bank_reconciliations")
-          .select("*")
-          .eq("period_from", from)
-          .eq("period_to", to)
-          .maybeSingle();
+  const rows = useMemo(() => {
+    return [...data.cheques]
+      .filter((c) => {
+        if (periodFrom && c.chequeDate && c.chequeDate < periodFrom) return false;
+        if (periodTo && c.chequeDate && c.chequeDate > periodTo) return false;
+        return true;
+      })
+      .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
+  }, [data.cheques, periodFrom, periodTo]);
 
-        if (row) {
-          setOpeningBalance(Number(row.opening_balance) || 0);
-        } else {
-          const { data: prev } = await supabase
-            .from("bank_reconciliations")
-            .select("*")
-            .lt("period_to", from)
-            .order("period_to", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          setOpeningBalance(prev ? Number(prev.closing_balance) || 0 : 0);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoadingBal(false);
-      }
+  const clearedInPeriod = rows.filter((c) => c.status === "Cleared" || c.status === "Deposited");
+  const clearedTotal = clearedInPeriod.reduce((s, c) => s + c.amount, 0);
+  const bookBalance = openingBalance + clearedTotal;
+  const difference = statementBalance - bookBalance;
+
+  const saveStatement = () => {
+    const payload: SavedRecon = {
+      openingBalance,
+      statementBalance,
+      periodFrom,
+      periodTo,
+      notes,
     };
-    load();
-  }, [from, to]);
-
-  const rows: Row[] = useMemo(() => {
-    const chequeRows: Row[] = data.cheques
-      .filter((c) => c.chequeDate && c.chequeDate >= from && c.chequeDate <= to)
-      .map((c) => ({
-        id: c.id,
-        date: c.chequeDate,
-        particular: tenantName(c.tenantId),
-        type: "Cheque" as const,
-        chequeNo: c.chequeNo,
-        bank: c.bank,
-        status: c.status,
-        clearedDate: c.clearedDate,
-        deposit: c.amount,
-        withdrawal: 0,
-        ref: c,
-      }));
-
-    const expenseRows: Row[] = data.expenses
-      .filter((e) => e.date && e.date >= from && e.date <= to)
-      .map((e) => ({
-        id: e.id,
-        date: e.date,
-        particular: e.description || e.category,
-        type: "Expense" as const,
-        status: "—",
-        deposit: 0,
-        withdrawal: e.amount,
-        ref: e,
-      }));
-
-    return [...chequeRows, ...expenseRows].sort((a, b) => a.date.localeCompare(b.date));
-  }, [data.cheques, data.expenses, data.tenants, from, to]);
-
-  const toggle = (id: string) => setSelected((p) => ({ ...p, [id]: !p[id] }));
-
-  const toggleAllPendingCheques = () => {
-    const pending = rows.filter((r) => r.type === "Cheque" && r.status !== "Cleared");
-    const allSelected = pending.every((r) => selected[r.id]);
-    if (allSelected) {
-      setSelected({});
-    } else {
-      const next: Record<string, boolean> = {};
-      pending.forEach((r) => (next[r.id] = true));
-      setSelected(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      toast.success("Reconciliation saved — opening balance kept for next time");
+    } catch {
+      toast.error("Could not save");
     }
   };
 
-  const selectedCheques = rows.filter((r) => r.type === "Cheque" && selected[r.id]);
-  const selectedTotal = selectedCheques.reduce((s, r) => s + r.deposit, 0);
-
-  const totalDeposit = rows.reduce((s, r) => s + r.deposit, 0);
-  const totalWithdrawal = rows.reduce((s, r) => s + r.withdrawal, 0);
-  const clearedDeposit = rows
-    .filter((r) => r.type === "Cheque" && r.status === "Cleared")
-    .reduce((s, r) => s + r.deposit, 0);
-  const availableOnlyInBooks = totalDeposit - clearedDeposit;
-  const expectedBankBalance = openingBalance + clearedDeposit - totalWithdrawal;
-  const balanceAsPerBooks = openingBalance + totalDeposit - totalWithdrawal;
-
-  const markCleared = async () => {
-    if (selectedCheques.length === 0) {
-      toast.error("Select at least one cheque");
-      return;
-    }
-    if (!clearedDate) {
-      toast.error("Enter Bank Clearance Date");
-      return;
-    }
+  /** Enter clearance date → status becomes Cleared automatically */
+  const setClearanceDate = async (chequeId: string, date: string) => {
+    const ch = data.cheques.find((c) => c.id === chequeId);
+    if (!ch) return;
     setSaving(true);
     try {
-      for (const row of selectedCheques) {
-        const c = row.ref;
-        await updateCheque(c.id, {
-          ...c,
+      if (date) {
+        await updateCheque(chequeId, {
+          ...ch,
+          clearedDate: date,
           status: "Cleared",
           reconciled: true,
-          clearedDate,
         });
+        toast.success("Cheque cleared");
+      } else {
+        await updateCheque(chequeId, {
+          ...ch,
+          clearedDate: "",
+          status: "PDC",
+          reconciled: false,
+        });
+        toast.message("Clearance removed — back to PDC");
       }
-      toast.success(`${selectedCheques.length} cheque(s) cleared`);
-      setSelected({});
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to update");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveReconciliation = async () => {
-    setSaving(true);
-    try {
-      const { error } = await supabase.from("bank_reconciliations").upsert(
-        {
-          period_from: from,
-          period_to: to,
-          opening_balance: openingBalance,
-          closing_balance: expectedBankBalance,
-          saved_at: new Date().toISOString(),
-        },
-        { onConflict: "period_from,period_to" }
-      );
-      if (error) throw error;
-      toast.success("Statement saved. Balance will be remembered for this period.");
+      await refresh();
     } catch (e: any) {
-      toast.error(e.message || "Failed to save");
+      toast.error(e.message || "Failed to update");
     } finally {
       setSaving(false);
     }
   };
 
-  const printPDF = () => window.print();
+  const periodLabel =
+    periodFrom || periodTo
+      ? `${periodFrom ? fmtDate(periodFrom) : "…"} → ${periodTo ? fmtDate(periodTo) : "…"}`
+      : "All periods";
 
   return (
     <AppShell>
-      {/* Print header */}
-      <div className="print-only hidden print:block mb-6 border-b pb-4">
+      <div className="print-only mb-6 hidden border-b pb-4 print:block">
         <div className="flex items-start gap-4">
-          <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
+          <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
             AK
           </div>
           <div>
             <h1 className="text-xl font-bold">Bank Reconciliation</h1>
-            <p className="text-sm text-muted-foreground">
-              Period: {fmtDate(from)} → {fmtDate(to)}
-            </p>
+            <p className="text-sm text-muted-foreground">Period: {periodLabel}</p>
             <p className="text-xs text-muted-foreground">Aqar Books — Built by AK</p>
           </div>
         </div>
@@ -218,192 +148,138 @@ function ReconciliationPage() {
       <div className="no-print">
         <PageHeader
           title="Bank Reconciliation"
-          description="Period search · Deposits (Income) · Withdrawals (Expense) · Bank clearance"
+          description="Enter clearance date on each cheque — status becomes Cleared automatically"
           action={
             <div className="flex gap-2">
-              <Button variant="outline" onClick={printPDF}>
+              <Button variant="outline" onClick={saveStatement}>
+                <Save className="mr-2 h-4 w-4" />
+                Save statement
+              </Button>
+              <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" />
                 Print / PDF
-              </Button>
-              <Button onClick={saveReconciliation} disabled={saving || loadingBal}>
-                <Save className="mr-2 h-4 w-4" />
-                {saving ? "Saving..." : "Save Statement"}
               </Button>
             </div>
           }
         />
       </div>
 
-      {/* Period + Opening Balance */}
       <Card className="mb-4 no-print">
-        <CardContent className="flex flex-wrap items-end gap-4 p-4">
-          <div className="space-y-1.5">
-            <Label>From Date</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <Label>Period from</Label>
+            <Input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label>To Date</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <div>
+            <Label>Period to</Label>
+            <Input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Opening Balance {loadingBal && "(loading...)"}</Label>
+          <div>
+            <Label>Opening balance (AED)</Label>
             <Input
               type="number"
               value={openingBalance || ""}
-              onChange={(e) => setOpeningBalance(Number(e.target.value) || 0)}
-              placeholder="0"
+              onChange={(e) => setOpeningBalance(Number(e.target.value))}
             />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Clearance Action */}
-      <Card className="mb-6 no-print">
-        <CardContent className="flex flex-wrap items-end gap-4 p-4">
-          <div className="space-y-1.5">
-            <Label>Bank Clearance Date (as per bank statement)</Label>
-            <Input type="date" value={clearedDate} onChange={(e) => setClearedDate(e.target.value)} />
+          <div>
+            <Label>Balance as per bank statement (AED)</Label>
+            <Input
+              type="number"
+              value={statementBalance || ""}
+              onChange={(e) => setStatementBalance(Number(e.target.value))}
+            />
           </div>
-          <Button onClick={markCleared} disabled={saving || selectedCheques.length === 0}>
-            {saving ? "Saving..." : `Mark ${selectedCheques.length} Cheque(s) Cleared`}
-          </Button>
+          <div className="sm:col-span-2">
+            <Label>Notes</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Month-end notes" />
+          </div>
         </CardContent>
       </Card>
 
-      {/* Summary — original cards kept */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Deposit (Income)</p>
-            <p className="text-lg font-semibold text-green-600">{currency(totalDeposit)}</p>
+            <p className="text-xs text-muted-foreground">Cleared in period</p>
+            <p className="text-lg font-semibold">{currency(clearedTotal)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Withdrawal (Expense)</p>
-            <p className="text-lg font-semibold text-red-600">{currency(totalWithdrawal)}</p>
+            <p className="text-xs text-muted-foreground">Balance as per books</p>
+            <p className="text-lg font-semibold">{currency(bookBalance)}</p>
+            <p className="text-xs text-muted-foreground">Opening + cleared</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Available Only in Books</p>
-            <p className="text-lg font-semibold text-amber-600">{currency(availableOnlyInBooks)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Expected Bank Balance</p>
-            <p className="text-lg font-semibold text-primary">{currency(expectedBankBalance)}</p>
-            <p className="text-xs text-muted-foreground">as on {fmtDate(to)}</p>
+            <p className="text-xs text-muted-foreground">Difference (bank − books)</p>
+            <p className={`text-lg font-semibold ${difference === 0 ? "text-emerald-600" : "text-amber-600"}`}>
+              {currency(difference)}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Table */}
       <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Cheques — enter clearance date to mark Cleared</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
-          <div className="border-b px-4 py-3 text-sm font-medium">
-            Transactions from {fmtDate(from)} to {fmtDate(to)} ({rows.length} entries)
-          </div>
-
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="no-print w-10">
-                  <input type="checkbox" onChange={toggleAllPendingCheques} title="Select all pending" />
-                </TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Particular</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Cheque No</TableHead>
+                <TableHead>Cheque date</TableHead>
+                <TableHead>Tenant</TableHead>
+                <TableHead>Cheque no.</TableHead>
                 <TableHead>Bank</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Clearance date</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Cleared Date</TableHead>
-                <TableHead className="text-right">Deposit</TableHead>
-                <TableHead className="text-right">Withdrawal</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? (
+              {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
-                    No transactions in this period.
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    No cheques in this period.
                   </TableCell>
                 </TableRow>
-              ) : (
-                rows.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="no-print">
-                      {r.type === "Cheque" && r.status !== "Cleared" && (
-                        <input
-                          type="checkbox"
-                          checked={!!selected[r.id]}
-                          onChange={() => toggle(r.id)}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell>{fmtDate(r.date)}</TableCell>
-                    <TableCell className="font-medium">{r.particular}</TableCell>
-                    <TableCell>{r.type}</TableCell>
-                    <TableCell>{r.chequeNo || "—"}</TableCell>
-                    <TableCell>{r.bank || "—"}</TableCell>
-                    <TableCell>
-                      {r.type === "Cheque" ? (
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                            r.status === "Cleared"
-                              ? "bg-success/12 text-success"
-                              : "bg-warning/15 text-warning"
-                          }`}
-                        >
-                          {r.status}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>{r.clearedDate ? fmtDate(r.clearedDate) : "—"}</TableCell>
-                    <TableCell className="text-right text-green-700">
-                      {r.deposit ? currency(r.deposit) : ""}
-                    </TableCell>
-                    <TableCell className="text-right text-red-600">
-                      {r.withdrawal ? currency(r.withdrawal) : ""}
-                    </TableCell>
-                  </TableRow>
-                ))
               )}
+              {rows.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
+                  <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
+                  <TableCell>{c.chequeNo || "—"}</TableCell>
+                  <TableCell>{c.bank || "—"}</TableCell>
+                  <TableCell className="text-right">{currency(c.amount)}</TableCell>
+                  <TableCell>
+                    <Input
+                      type="date"
+                      className="no-print w-[150px]"
+                      disabled={saving}
+                      value={c.clearedDate || ""}
+                      onChange={(e) => setClearanceDate(c.id, e.target.value)}
+                    />
+                    <span className="hidden print:inline">{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</span>
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        c.status === "Cleared"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : c.status === "Bounced"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {c.status}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
-
-          {/* Original tally-style footer kept */}
-          <div className="space-y-1.5 border-t bg-muted/20 px-4 py-4 text-sm">
-            <div className="flex justify-between no-print">
-              <span>Selected for clearance</span>
-              <strong>
-                {selectedCheques.length} cheque(s) — {currency(selectedTotal)}
-              </strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Total Deposit (Income / Cheques)</span>
-              <strong className="text-green-700">{currency(totalDeposit)}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Total Withdrawal (Expenses)</span>
-              <strong className="text-red-600">{currency(totalWithdrawal)}</strong>
-            </div>
-            <div className="flex justify-between text-amber-700">
-              <span>Available Only in Books (Uncleared cheques)</span>
-              <strong>{currency(availableOnlyInBooks)}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Balance as per Books</span>
-              <strong>{currency(balanceAsPerBooks)}</strong>
-            </div>
-            <div className="mt-2 flex justify-between border-t pt-2 text-base">
-              <span>Expected Bank Balance as on {fmtDate(to)}</span>
-              <strong className="text-primary">{currency(expectedBankBalance)}</strong>
-            </div>
-          </div>
         </CardContent>
       </Card>
 
@@ -411,7 +287,7 @@ function ReconciliationPage() {
         @media print {
           .no-print { display: none !important; }
           .print-only { display: block !important; }
-          header, nav { display: none !important; }
+          header, nav, aside { display: none !important; }
           body { background: white; }
         }
       `}</style>
