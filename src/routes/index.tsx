@@ -20,13 +20,7 @@ import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
-    meta: [
-      { title: "Dashboard — Aqar Books" },
-      {
-        name: "description",
-        content: "Rental income, expenses, occupancy, average rent and trends.",
-      },
-    ],
+    meta: [{ title: "Dashboard — Aqar Books" }],
   }),
   component: Dashboard,
 });
@@ -60,17 +54,28 @@ function Stat({
   icon: React.ElementType;
   tone?: "default" | "positive" | "negative";
 }) {
-  const toneClass =
-    tone === "positive" ? "text-emerald-600" : tone === "negative" ? "text-destructive" : "text-foreground";
+  const valueClass =
+    tone === "positive"
+      ? "text-emerald-600"
+      : tone === "negative"
+        ? "text-red-600"
+        : "text-foreground";
+  const iconWrap =
+    tone === "positive"
+      ? "bg-emerald-50 text-emerald-700"
+      : tone === "negative"
+        ? "bg-red-50 text-red-700"
+        : "bg-primary/10 text-primary";
+
   return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-4 pt-6">
-        <div>
+    <Card className="border-border/80 shadow-sm">
+      <CardContent className="flex items-start justify-between gap-3 pt-5 pb-5">
+        <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className={`mt-1 text-2xl font-semibold tracking-tight ${toneClass}`}>{value}</p>
+          <p className={`mt-1 truncate text-2xl font-semibold tracking-tight ${valueClass}`}>{value}</p>
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
-        <span className="flex size-10 items-center justify-center rounded-lg bg-secondary text-primary">
+        <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconWrap}`}>
           <Icon className="size-5" />
         </span>
       </CardContent>
@@ -110,7 +115,6 @@ function Dashboard() {
     return { income, expense, monthly };
   }, [data, year]);
 
-  // Occupancy from ACTIVE contracts covering today
   const { occupiedCount, vacant, totalUnits } = useMemo(() => {
     const occupiedUnitIds = new Set<string>();
     data.contracts.forEach((c) => {
@@ -128,8 +132,7 @@ function Dashboard() {
     };
   }, [data.contracts, data.units, today]);
 
-  // Average yearly rental = average of active contract annual rents
-  const { avgRent, prevAvgRent, hikePct } = useMemo(() => {
+  const { avgRent, hikePct } = useMemo(() => {
     const active = data.contracts.filter((c) => {
       if ((c.status || "Active") !== "Active") return false;
       if (c.startDate && c.startDate > today) return false;
@@ -139,7 +142,6 @@ function Dashboard() {
     const avgRent =
       active.length > 0 ? Math.round(active.reduce((s, c) => s + (c.rent || 0), 0) / active.length) : 0;
 
-    // Previous year average from contracts that overlapped previous year
     const prevYear = year - 1;
     const prevStart = `${prevYear}-01-01`;
     const prevEnd = `${prevYear}-12-31`;
@@ -155,12 +157,11 @@ function Dashboard() {
 
     let hikePct: number | null = null;
     if (prevAvgRent > 0 && avgRent > 0) {
-      hikePct = Math.round(((avgRent - prevAvgRent) / prevAvgRent) * 1000) / 10; // 1 decimal
+      hikePct = Math.round(((avgRent - prevAvgRent) / prevAvgRent) * 1000) / 10;
     }
-    return { avgRent, prevAvgRent, hikePct };
+    return { avgRent, hikePct };
   }, [data.contracts, today, year]);
 
-  // Pie: rent accrual last 3 calendar years (auto rolls: 2024/25/26 → next year 2025/26/27)
   const pieData = useMemo(() => {
     const years = [year - 2, year - 1, year];
     return years.map((y) => {
@@ -168,16 +169,22 @@ function Dashboard() {
       data.contracts.forEach((c) => {
         total += rentInYear(c.startDate, c.endDate, c.rent, y);
       });
-      return { name: String(y), value: total, year: y };
+      return { name: String(y), value: total };
     });
   }, [data.contracts, year]);
 
+  // Upcoming PDCs within next 120 days (and not more than 3 days overdue)
   const upcoming = useMemo(
     () =>
       data.cheques
-        .filter((c) => c.status === "PDC" && (c.kind || "rent") !== "deposit" && daysUntil(c.chequeDate) >= -3)
+        .filter((c) => {
+          if (c.status !== "PDC") return false;
+          if ((c.kind || "rent") === "deposit") return false;
+          const d = daysUntil(c.chequeDate);
+          return d >= -3 && d <= 120;
+        })
         .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate))
-        .slice(0, 6),
+        .slice(0, 10),
     [data.cheques],
   );
 
@@ -185,43 +192,51 @@ function Dashboard() {
 
   const hikeHint =
     hikePct == null
-      ? prevAvgRent === 0
-        ? "No previous-year average"
-        : undefined
+      ? "No previous-year average"
       : hikePct >= 0
         ? `${hikePct}% ⬆️ vs ${year - 1}`
         : `${Math.abs(hikePct)}% ⬇️ vs ${year - 1}`;
+
+  const profit = income - expense;
 
   return (
     <AppShell>
       <PageHeader title="Dashboard" description={`Portfolio performance for ${year}`} />
 
+      {/* Same style colour cards for all fields */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <Stat label="Income (collected)" value={currency(income)} icon={ArrowUpRight} tone="positive" />
+        <Stat
+          label="Income (collected)"
+          value={currency(income)}
+          icon={ArrowUpRight}
+          tone="positive"
+        />
         <Stat label="Expenses" value={currency(expense)} icon={ArrowDownRight} tone="negative" />
         <Stat
           label="Net profit"
-          value={currency(income - expense)}
-          hint={income ? `${Math.round(((income - expense) / income) * 100)}% margin` : undefined}
+          value={currency(profit)}
+          hint={income ? `${Math.round((profit / income) * 100)}% margin` : undefined}
           icon={Wallet}
+          tone={profit >= 0 ? "positive" : "negative"}
         />
         <Stat
           label="Occupancy"
           value={`${occupiedCount}/${totalUnits}`}
           hint={`${vacant.length} vacant unit(s)`}
           icon={DoorOpen}
+          tone={occupiedCount > 0 ? "positive" : "default"}
         />
         <Stat
           label="Average Yearly Rental (AED)"
           value={currency(avgRent)}
           hint={hikeHint}
           icon={TrendingUp}
-          tone={hikePct != null && hikePct >= 0 ? "positive" : hikePct != null ? "negative" : "default"}
+          tone={hikePct == null ? "default" : hikePct >= 0 ? "positive" : "negative"}
         />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 border-border/80 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">Profit trend ({year})</CardTitle>
           </CardHeader>
@@ -265,39 +280,52 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        {/* Pie — labels OFF to avoid overflow; legend + list inside card */}
+        <Card className="border-border/80 shadow-sm overflow-hidden">
+          <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Rent by year ({year - 2} / {year - 1} / {year})
             </CardTitle>
           </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  label={({ name, percent }) =>
-                    `${name} (${((percent || 0) * 100).toFixed(0)}%)`
-                  }
-                >
-                  {pieData.map((_, i) => (
-                    <Cell key={pieData[i].name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: number) => currency(v)} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+          <CardContent className="pt-0">
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    label={false}
+                  >
+                    {pieData.map((_, i) => (
+                      <Cell key={pieData[i].name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => currency(v)} />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={28}
+                    formatter={(value) => <span className="text-xs">{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-1 space-y-1.5 border-t pt-3">
               {pieData.map((p, i) => (
-                <div key={p.name} className="flex justify-between">
-                  <span style={{ color: PIE_COLORS[i] }}>{p.name}</span>
-                  <span className="font-medium text-foreground">{currency(p.value)}</span>
+                <div key={p.name} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="inline-block size-2.5 rounded-full"
+                      style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+                    />
+                    {p.name}
+                  </span>
+                  <span className="font-medium">{currency(p.value)}</span>
                 </div>
               ))}
             </div>
@@ -306,14 +334,14 @@ function Dashboard() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base">Upcoming PDCs</CardTitle>
+            <CardTitle className="text-base">Upcoming PDCs (120 days)</CardTitle>
             <CalendarClock className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="space-y-2">
             {upcoming.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No upcoming cheques.</p>
+              <p className="text-sm text-muted-foreground">No PDCs in the next 120 days.</p>
             ) : (
               upcoming.map((c) => (
                 <div
@@ -336,7 +364,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Vacant units</CardTitle>
             <DoorOpen className="size-4 text-muted-foreground" />
