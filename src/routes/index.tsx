@@ -276,6 +276,10 @@ function Dashboard() {
                   fill="url(#profitFill)"
                   fillOpacity={1}
                   name="Profit"
+                  isAnimationActive={true}
+                  animationBegin={0}
+                  animationDuration={1200}
+                  animationEasing="ease-out"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -303,6 +307,10 @@ function Dashboard() {
                     outerRadius={70}
                     paddingAngle={2}
                     label={false}
+                    isAnimationActive={true}
+                    animationBegin={200}
+                    animationDuration={1000}
+                    animationEasing="ease-out"
                   >
                     {pieData.map((_, i) => (
                       <Cell key={pieData[i].name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
