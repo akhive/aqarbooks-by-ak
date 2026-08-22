@@ -46,7 +46,7 @@ function exportCSV(filename: string, headers: string[], rows: (string | number)[
   URL.revokeObjectURL(url);
 }
 
-function ReportActions({ onExport }: { title?: string; period?: string; onExport: () => void }) {
+function ReportActions({ onExport }: { onExport: () => void }) {
   return (
     <div className="flex flex-wrap gap-2 no-print">
       <Button variant="outline" size="sm" onClick={onExport}>
@@ -69,6 +69,8 @@ function ReportsPage() {
 
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [tenantSearch, setTenantSearch] = useState("");
+  const [flatSearch, setFlatSearch] = useState("");
   const [leaseSort, setLeaseSort] = useState<"asc" | "desc">("asc");
   const [incomeSort, setIncomeSort] = useState<"asc" | "desc">("asc");
   const [pdcSort, setPdcSort] = useState<"asc" | "desc">("asc");
@@ -80,6 +82,20 @@ function ReportsPage() {
     return u ? `${u.flatNo}${u.building ? ` — ${u.building}` : ""}` : "—";
   };
 
+  const matchTenantFlat = (tenantId: string, unitId?: string) => {
+    const tq = tenantSearch.trim().toLowerCase();
+    const fq = flatSearch.trim().toLowerCase();
+    if (tq) {
+      const name = (data.tenants.find((t) => t.id === tenantId)?.name || "").toLowerCase();
+      if (!name.includes(tq)) return false;
+    }
+    if (fq) {
+      const flat = (data.units.find((u) => u.id === unitId)?.flatNo || "").toLowerCase();
+      if (!flat.includes(fq)) return false;
+    }
+    return true;
+  };
+
   const periodLabel =
     from || to ? `${from ? fmtDate(from) : "…"} → ${to ? fmtDate(to) : "…"}` : "All periods";
 
@@ -87,6 +103,7 @@ function ReportsPage() {
     const rows = data.contracts.filter((c) => {
       if (from && c.endDate < from) return false;
       if (to && c.startDate > to) return false;
+      if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
       return true;
     });
     return [...rows].sort((a, b) => {
@@ -96,7 +113,7 @@ function ReportsPage() {
         ? an.localeCompare(bn, undefined, { numeric: true })
         : bn.localeCompare(an, undefined, { numeric: true });
     });
-  }, [data.contracts, from, to, leaseSort]);
+  }, [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch, leaseSort]);
 
   const leaseTotal = leaseRows.reduce((s, c) => s + c.rent, 0);
 
@@ -105,6 +122,7 @@ function ReportsPage() {
       .filter((c) => {
         if (from && c.endDate < from) return false;
         if (to && c.startDate > to) return false;
+        if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
         return true;
       })
       .map((c) => {
@@ -124,7 +142,18 @@ function ReportsPage() {
         ? an.localeCompare(bn, undefined, { numeric: true })
         : bn.localeCompare(an, undefined, { numeric: true });
     });
-  }, [data.contracts, year, prevYear, from, to, incomeSort]);
+  }, [
+    data.contracts,
+    data.tenants,
+    data.units,
+    year,
+    prevYear,
+    from,
+    to,
+    tenantSearch,
+    flatSearch,
+    incomeSort,
+  ]);
 
   const upcoming = useMemo(() => {
     const rows = data.cheques.filter((c) => {
@@ -132,6 +161,8 @@ function ReportsPage() {
       if ((c.kind || "rent") === "deposit") return false;
       if (from && c.chequeDate < from) return false;
       if (to && c.chequeDate > to) return false;
+      const contract = data.contracts.find((x) => x.id === c.contractId);
+      if (!matchTenantFlat(c.tenantId, contract?.unitId)) return false;
       return true;
     });
     return [...rows].sort((a, b) =>
@@ -139,11 +170,12 @@ function ReportsPage() {
         ? (a.chequeDate || "").localeCompare(b.chequeDate || "")
         : (b.chequeDate || "").localeCompare(a.chequeDate || ""),
     );
-  }, [data.cheques, from, to, pdcSort]);
+  }, [data.cheques, data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch, pdcSort]);
 
   const yearly = useMemo(() => {
     const map = new Map<number, { income: number; expense: number }>();
     data.contracts.forEach((c) => {
+      if (!matchTenantFlat(c.tenantId, c.unitId)) return;
       const byYear = splitByYear(c.startDate, c.endDate, c.rent);
       Object.entries(byYear).forEach(([y, amt]) => {
         const yr = Number(y);
@@ -164,7 +196,7 @@ function ReportsPage() {
       map.set(y, row);
     });
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
-  }, [data.contracts, data.expenses, from, to]);
+  }, [data.contracts, data.expenses, data.tenants, data.units, from, to, tenantSearch, flatSearch]);
 
   const renewals = useMemo(
     () =>
@@ -175,21 +207,32 @@ function ReportsPage() {
           if (d < 0 || d > 120) return false;
           if (from && c.endDate < from) return false;
           if (to && c.endDate > to) return false;
+          if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
           return true;
         })
         .sort((a, b) => a.endDate.localeCompare(b.endDate)),
-    [data.contracts, from, to],
+    [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch],
   );
 
   const vacant = useMemo(() => {
     const occupied = new Set(
       data.contracts
-        .filter((c) => (c.status || "Active") === "Active" && c.startDate <= today && c.endDate >= today)
+        .filter(
+          (c) =>
+            (c.status || "Active") === "Active" &&
+            c.startDate <= today &&
+            c.endDate >= today,
+        )
         .map((c) => c.unitId)
         .filter(Boolean),
     );
-    return data.units.filter((u) => !occupied.has(u.id));
-  }, [data.units, data.contracts, today]);
+    const fq = flatSearch.trim().toLowerCase();
+    return data.units.filter((u) => {
+      if (occupied.has(u.id)) return false;
+      if (fq && !(u.flatNo || "").toLowerCase().includes(fq)) return false;
+      return true;
+    });
+  }, [data.units, data.contracts, today, flatSearch]);
 
   const depositRows = useMemo(() => {
     const rows = data.cheques
@@ -211,6 +254,7 @@ function ReportsPage() {
       .filter((r) => {
         if (from && r.endDate && r.endDate < from) return false;
         if (to && r.startDate && r.startDate > to) return false;
+        if (!matchTenantFlat(r.tenantId, r.unitId)) return false;
         return true;
       });
 
@@ -221,7 +265,7 @@ function ReportsPage() {
         ? an.localeCompare(bn, undefined, { numeric: true })
         : bn.localeCompare(an, undefined, { numeric: true });
     });
-  }, [data.cheques, data.contracts, from, to, depositSort]);
+  }, [data.cheques, data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch, depositSort]);
 
   const depositTotal = depositRows.reduce((s, r) => s + r.depositAmount, 0);
 
@@ -243,7 +287,7 @@ function ReportsPage() {
       <div className="no-print">
         <PageHeader
           title="Reports"
-          description="Period filter, Excel export and Print/PDF for every report"
+          description="Period, tenant and flat filters · Excel export and Print/PDF"
         />
       </div>
 
@@ -257,14 +301,32 @@ function ReportsPage() {
             <Label>To Date</Label>
             <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
+          <div className="w-full max-w-[200px]">
+            <Label>Tenant</Label>
+            <Input
+              placeholder="Search tenant"
+              value={tenantSearch}
+              onChange={(e) => setTenantSearch(e.target.value)}
+            />
+          </div>
+          <div className="w-full max-w-[140px]">
+            <Label>Flat No.</Label>
+            <Input
+              placeholder="e.g. 101"
+              value={flatSearch}
+              onChange={(e) => setFlatSearch(e.target.value)}
+            />
+          </div>
           <Button
             variant="ghost"
             onClick={() => {
               setFrom("");
               setTo("");
+              setTenantSearch("");
+              setFlatSearch("");
             }}
           >
-            Clear period
+            Clear filters
           </Button>
           <p className="self-center text-sm text-muted-foreground">
             Active period: <strong>{periodLabel}</strong>
@@ -273,7 +335,7 @@ function ReportsPage() {
       </Card>
 
       <Tabs defaultValue="lease">
-        <TabsList className="no-print flex-wrap h-auto">
+        <TabsList className="no-print flex h-auto flex-wrap">
           <TabsTrigger value="lease">Lease report</TabsTrigger>
           <TabsTrigger value="income">Income breakdown</TabsTrigger>
           <TabsTrigger value="pdc">Upcoming PDCs</TabsTrigger>
@@ -283,7 +345,6 @@ function ReportsPage() {
           <TabsTrigger value="deposit">Deposits</TabsTrigger>
         </TabsList>
 
-        {/* Lease */}
         <TabsContent value="lease">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -334,7 +395,7 @@ function ReportsPage() {
                   {leaseRows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                        No contracts in this period.
+                        No contracts match filters.
                       </TableCell>
                     </TableRow>
                   )}
@@ -360,7 +421,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Income */}
         <TabsContent value="income">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -430,7 +490,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* PDCs */}
         <TabsContent value="pdc">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -492,7 +551,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Profit */}
         <TabsContent value="profit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -537,7 +595,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Renewals */}
         <TabsContent value="renewal">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -591,7 +648,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Vacant */}
         <TabsContent value="vacant">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -634,7 +690,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* Deposits */}
         <TabsContent value="deposit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -698,7 +753,7 @@ function ReportsPage() {
                   {depositRows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                        No deposit cheques. Open a lease → Split deposit.
+                        No deposit cheques match filters.
                       </TableCell>
                     </TableRow>
                   )}
