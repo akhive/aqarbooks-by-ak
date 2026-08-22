@@ -26,7 +26,6 @@ const nav = [
   { to: "/reports", label: "Reports", icon: FileBarChart2 },
   { to: "/backup", label: "Backup", icon: Save },
   { to: "/banks", label: "Bank names", icon: Building2 },
-  { to: "/deposits", label: "Deposits", icon: Banknote },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
