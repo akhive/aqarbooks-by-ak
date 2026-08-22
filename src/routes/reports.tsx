@@ -279,7 +279,7 @@ function ReportsPage() {
           <div>
             <h1 className="text-xl font-bold">Report</h1>
             <p className="text-sm text-muted-foreground">Period: {periodLabel}</p>
-            <p className="text-xs text-muted-foreground">Aqar Books — Built by AK</p>
+            <p className="text-xs text-muted-foreground">Aqar Books </p>
           </div>
         </div>
       </div>
