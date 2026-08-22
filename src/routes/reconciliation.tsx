@@ -44,7 +44,7 @@ function loadSaved(): SavedRecon {
   return { openingBalance: 0, statementBalance: 0, periodFrom: "", periodTo: "" };
 }
 
-/** dd/mm/yyyy or yyyy-mm-dd → yyyy-mm-dd */
+/** dd/mm/yyyy or yyyy-mm-dd → yyyy-mm-dd ; empty → "" ; invalid → null */
 function parseClearanceDate(raw: string): string | null {
   const t = raw.trim();
   if (!t) return "";
@@ -73,6 +73,7 @@ function ReconciliationPage() {
   const [statementBalance, setStatementBalance] = useState(0);
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
+  /** Draft only — not saved until Save is clicked */
   const [draftClearance, setDraftClearance] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -84,6 +85,7 @@ function ReconciliationPage() {
     setPeriodTo(s.periodTo);
   }, []);
 
+  // Load existing clearance into draft (display only)
   useEffect(() => {
     const next: Record<string, string> = {};
     data.cheques.forEach((c) => {
@@ -110,9 +112,8 @@ function ReconciliationPage() {
   const clearedTotal = clearedRows.reduce((s, c) => s + c.amount, 0);
   const unclearedTotal = unclearedRows.reduce((s, c) => s + c.amount, 0);
 
-  // Classic recon figures
   const balanceAsPerBooks = openingBalance + clearedTotal;
-  const expectedBankBalance = balanceAsPerBooks; // books after clearing
+  const expectedBankBalance = balanceAsPerBooks;
   const balanceAsPerBank = statementBalance;
   const difference = balanceAsPerBank - balanceAsPerBooks;
 
@@ -121,49 +122,70 @@ function ReconciliationPage() {
       ? `${periodFrom ? fmtDate(periodFrom) : "…"} → ${periodTo ? fmtDate(periodTo) : "…"}`
       : "All periods";
 
-  const saveStatement = () => {
+  /**
+   * Save:
+   * 1) Keep opening / bank / period in localStorage
+   * 2) Apply all typed clearance dates → status Cleared
+   * 3) Empty clearance → back to PDC (only if it had a clearance before)
+   */
+  const saveStatement = async () => {
+    setSaving(true);
     try {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({ openingBalance, statementBalance, periodFrom, periodTo }),
       );
-      toast.success("Saved");
-    } catch {
-      toast.error("Could not save");
-    }
-  };
 
-  const commitClearance = async (chequeId: string, typed: string) => {
-    const ch = data.cheques.find((c) => c.id === chequeId);
-    if (!ch) return;
-    const parsed = parseClearanceDate(typed);
-    if (parsed === null) {
-      toast.error("Type date as dd/mm/yyyy");
-      setDraftClearance((d) => ({ ...d, [chequeId]: displayClearance(ch.clearedDate || "") }));
-      return;
-    }
-    setSaving(true);
-    try {
-      if (parsed) {
-        await updateCheque(chequeId, {
-          ...ch,
-          clearedDate: parsed,
-          status: "Cleared",
-          reconciled: true,
-        });
-        toast.success("Cleared");
-      } else {
-        await updateCheque(chequeId, {
-          ...ch,
-          clearedDate: "",
-          status: "PDC",
-          reconciled: false,
-        });
-        toast.message("Clearance removed");
+      let updated = 0;
+      let errors = 0;
+
+      for (const c of rows) {
+        const typed = draftClearance[c.id] ?? "";
+        const parsed = parseClearanceDate(typed);
+
+        if (parsed === null) {
+          errors++;
+          continue;
+        }
+
+        const prev = c.clearedDate || "";
+        const next = parsed || "";
+
+        // No change
+        if (prev === next) continue;
+
+        if (next) {
+          await updateCheque(c.id, {
+            ...c,
+            clearedDate: next,
+            status: "Cleared",
+            reconciled: true,
+          });
+          updated++;
+        } else if (prev) {
+          // User cleared the date field
+          await updateCheque(c.id, {
+            ...c,
+            clearedDate: "",
+            status: "PDC",
+            reconciled: false,
+          });
+          updated++;
+        }
       }
+
       await refresh();
+
+      if (errors > 0) {
+        toast.error(`${errors} date(s) invalid — use dd/mm/yyyy`);
+      }
+      if (updated > 0) {
+        toast.success(`Saved · ${updated} cheque(s) updated to Cleared`);
+      } else if (errors === 0) {
+        toast.success("Statement saved");
+      }
     } catch (e: any) {
-      toast.error(e.message || "Failed");
+      toast.error(e.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -171,7 +193,6 @@ function ReconciliationPage() {
 
   return (
     <AppShell>
-      {/* Print header */}
       <div className="print-only mb-6 hidden border-b pb-4 print:block">
         <div className="flex items-start gap-4">
           <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
@@ -180,7 +201,7 @@ function ReconciliationPage() {
           <div>
             <h1 className="text-xl font-bold">Bank Reconciliation</h1>
             <p className="text-sm text-muted-foreground">Period: {periodLabel}</p>
-            <p className="text-xs text-muted-foreground">Aqar Books — Built by AK</p>
+            <p className="text-xs text-muted-foreground">Aqar Books </p>
           </div>
         </div>
       </div>
@@ -188,12 +209,12 @@ function ReconciliationPage() {
       <div className="no-print">
         <PageHeader
           title="Bank Reconciliation"
-          description="Type clearance date as dd/mm/yyyy — status becomes Cleared"
+          description="Type all clearance dates, then click Save — status becomes Cleared only on Save"
           action={
             <div className="flex gap-2">
-              <Button variant="outline" onClick={saveStatement}>
+              <Button onClick={saveStatement} disabled={saving}>
                 <Save className="mr-2 h-4 w-4" />
-                Save
+                {saving ? "Saving..." : "Save statement"}
               </Button>
               <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" />
@@ -204,7 +225,6 @@ function ReconciliationPage() {
         />
       </div>
 
-      {/* Period + balances input */}
       <Card className="mb-4 no-print">
         <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -234,7 +254,6 @@ function ReconciliationPage() {
         </CardContent>
       </Card>
 
-      {/* Classic summary — TOP (previous style) */}
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="text-base">Reconciliation summary</CardTitle>
@@ -277,10 +296,11 @@ function ReconciliationPage() {
         </CardContent>
       </Card>
 
-      {/* Cheque list */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="text-base">Cheques in period</CardTitle>
+          <CardTitle className="text-base">
+            Cheques — type clearance dates, then Save statement
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -316,15 +336,10 @@ function ReconciliationPage() {
                       inputMode="numeric"
                       placeholder="dd/mm/yyyy"
                       className="no-print w-[120px]"
-                      disabled={saving}
                       value={draftClearance[c.id] ?? ""}
                       onChange={(e) =>
                         setDraftClearance((d) => ({ ...d, [c.id]: e.target.value }))
                       }
-                      onBlur={() => commitClearance(c.id, draftClearance[c.id] ?? "")}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                      }}
                     />
                     <span className="hidden print:inline">
                       {c.clearedDate ? displayClearance(c.clearedDate) : "—"}
@@ -350,7 +365,6 @@ function ReconciliationPage() {
         </CardContent>
       </Card>
 
-      {/* Classic summary — BOTTOM (same figures again for print) */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Calculation details</CardTitle>
