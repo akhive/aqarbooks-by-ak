@@ -242,11 +242,12 @@ function Dashboard() {
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={monthly}>
+            <AreaChart data={monthly}>
                 <defs>
                   <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor="#0f766e" stopOpacity={0.85} />
+                    <stop offset="55%" stopColor="#0f766e" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="#0f766e" stopOpacity={0.15} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
@@ -270,9 +271,10 @@ function Dashboard() {
                 <Area
                   type="monotone"
                   dataKey="profit"
-                  stroke="var(--color-primary)"
-                  strokeWidth={2}
+                  stroke="#0f766e"
+                  strokeWidth={3}
                   fill="url(#profitFill)"
+                  fillOpacity={1}
                   name="Profit"
                 />
               </AreaChart>
