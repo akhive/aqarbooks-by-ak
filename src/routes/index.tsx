@@ -13,7 +13,14 @@ import {
   YAxis,
   Legend,
 } from "recharts";
-import { ArrowDownRight, ArrowUpRight, CalendarClock, DoorOpen, TrendingUp, Wallet } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarClock,
+  DoorOpen,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
@@ -69,7 +76,7 @@ function Stat({
 
   return (
     <Card className="border-border/80 shadow-sm">
-      <CardContent className="flex items-start justify-between gap-3 pt-5 pb-5">
+      <CardContent className="flex items-start justify-between gap-3 pb-5 pt-5">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className={`mt-1 truncate text-2xl font-semibold tracking-tight ${valueClass}`}>{value}</p>
@@ -173,7 +180,6 @@ function Dashboard() {
     });
   }, [data.contracts, year]);
 
-  // Upcoming PDCs within next 120 days (and not more than 3 days overdue)
   const upcoming = useMemo(
     () =>
       data.cheques
@@ -186,6 +192,20 @@ function Dashboard() {
         .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate))
         .slice(0, 10),
     [data.cheques],
+  );
+
+  const upcomingRenewals = useMemo(
+    () =>
+      data.contracts
+        .filter((c) => {
+          if ((c.status || "Active") !== "Active") return false;
+          if (!c.endDate) return false;
+          const d = daysUntil(c.endDate);
+          return d >= 0 && d <= 120;
+        })
+        .sort((a, b) => a.endDate.localeCompare(b.endDate))
+        .slice(0, 10),
+    [data.contracts],
   );
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "Unknown";
@@ -203,7 +223,6 @@ function Dashboard() {
     <AppShell>
       <PageHeader title="Dashboard" description={`Portfolio performance for ${year}`} />
 
-      {/* Same style colour cards for all fields */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
           label="Income (collected)"
@@ -236,13 +255,13 @@ function Dashboard() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2 border-border/80 shadow-sm">
+        <Card className="border-border/80 shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Profit trend ({year})</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={monthly}>
+              <AreaChart data={monthly}>
                 <defs>
                   <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#0f766e" stopOpacity={0.85} />
@@ -286,8 +305,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Pie — labels OFF to avoid overflow; legend + list inside card */}
-        <Card className="border-border/80 shadow-sm overflow-hidden">
+        <Card className="overflow-hidden border-border/80 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Rent by year ({year - 2} / {year - 1} / {year})
@@ -343,7 +361,7 @@ function Dashboard() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Upcoming PDCs (120 days)</CardTitle>
@@ -370,6 +388,41 @@ function Dashboard() {
                   </div>
                 </div>
               ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Upcoming renewals</CardTitle>
+            <CalendarClock className="size-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {upcomingRenewals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No renewals in the next 120 days.</p>
+            ) : (
+              upcomingRenewals.map((c) => {
+                const unit = data.units.find((u) => u.id === c.unitId);
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {c.leaseNo || "—"} · {tenantName(c.tenantId)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Flat {unit?.flatNo || "—"} · ends {fmtDate(c.endDate)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{currency(c.rent)}</p>
+                      <p className="text-xs text-muted-foreground">in {daysUntil(c.endDate)}d</p>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </CardContent>
         </Card>
