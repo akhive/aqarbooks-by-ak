@@ -50,23 +50,43 @@ function loadBanks(): string[] {
 
 function dayCount(start: string, end: string) {
   if (!start || !end) return 0;
-  return Math.max(
-    0,
-    Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1,
-  );
+  const s = new Date(start + "T12:00:00");
+  const e = new Date(end + "T12:00:00");
+  return Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000) + 1);
 }
 
+function toYmd(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Equal instalments: same day of month, every (period months / count) months */
 function splitDates(startDate: string, endDate: string, count: number): string[] {
   if (!startDate || count < 1) return [];
-  const start = new Date(startDate);
-  const end = new Date(endDate || startDate);
-  const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
-  const interval = totalDays / count;
+
+  const start = new Date(startDate + "T12:00:00");
+  const end = new Date((endDate || startDate) + "T12:00:00");
+  const dayOfMonth = start.getDate();
+
+  // Months in the lease (e.g. 25 Aug 2025 → 24 Aug 2026 ≈ 12)
+  let totalMonths =
+    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  if (end.getDate() >= start.getDate()) totalMonths += 0;
+  // Prefer full 12 for a normal 1-year lease ending day-before anniversary
+  if (totalMonths < 1) totalMonths = 1;
+  // If end is day before next anniversary, treat as full year span
+  const approxDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (approxDays >= 360 && approxDays <= 366) totalMonths = 12;
+
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
-    const d = new Date(start);
-    d.setDate(d.getDate() + Math.round(interval * i));
-    out.push(d.toISOString().slice(0, 10));
+    const monthsToAdd = Math.round((totalMonths * i) / count);
+    const d = new Date(start.getFullYear(), start.getMonth() + monthsToAdd, 1);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(dayOfMonth, lastDay));
+    out.push(toYmd(d));
   }
   return out;
 }
