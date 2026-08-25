@@ -37,6 +37,7 @@ export type Contract = {
   depositAmount: number;
   penalty?: number;
   extraCharges?: number;
+  actualRent?: number;
 };
 
 export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
@@ -125,6 +126,7 @@ const mapContract = (r: any): Contract => ({
   depositAmount: Number(r.deposit_amount) || 0,
   penalty: Number(r.penalty) || 0,
   extraCharges: Number(r.extra_charges) || 0,
+  actualRent: Number(r.actual_rent) || 0,
 });
 
 const mapCheque = (r: any): Cheque => ({
@@ -292,6 +294,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             deposit_amount: c.depositAmount || 0,
             penalty: c.penalty || 0,
             extra_charges: c.extraCharges || 0,
+            actual_rent: c.actualRent || 0,
           })
           .select()
           .single();
@@ -317,6 +320,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             deposit_amount: c.depositAmount || 0,
             penalty: c.penalty || 0,
             extra_charges: c.extraCharges || 0,
+            actual_rent: c.actualRent || 0,
           })
           .eq("id", id);
         if (error) throw error;
