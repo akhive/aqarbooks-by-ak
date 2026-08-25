@@ -214,6 +214,7 @@ function ContractDetailPage() {
 
   const rentForRevenue =
     contract.actualRent && contract.actualRent > 0 ? contract.actualRent : contract.rent;
+
   const endForRevenue =
     (contract.status === "Broken" ||
       contract.status === "Cancelled" ||
@@ -221,6 +222,7 @@ function ContractDetailPage() {
     contract.endedAt
       ? contract.endedAt
       : contract.endDate;
+
   const rev = calcRevenue(contract.startDate, endForRevenue, rentForRevenue);
 
   const rentTotal = rentCheques.reduce((s, c) => s + c.amount, 0);
