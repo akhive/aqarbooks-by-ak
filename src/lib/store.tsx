@@ -154,12 +154,12 @@ const mapExpense = (r: any): Expense => ({
 export function calcRevenue(startDate: string, endDate: string, rent: number) {
   if (!startDate || !endDate || !rent) return { currentYear: 0, deferred: 0 };
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = new Date(startDate + "T12:00:00");
+  const end = new Date(endDate + "T12:00:00");
   const year = new Date().getFullYear();
 
-  const yearStart = new Date(year, 0, 1);
-  const yearEnd = new Date(year, 11, 31);
+  const yearStart = new Date(year, 0, 1, 12, 0, 0);
+  const yearEnd = new Date(year, 11, 31, 12, 0, 0);
 
   const daily = rent / 365;
 
@@ -168,10 +168,10 @@ export function calcRevenue(startDate: string, endDate: string, rent: number) {
 
   let currentDays = 0;
   if (currentEnd >= currentStart) {
-    currentDays = Math.ceil((currentEnd.getTime() - currentStart.getTime()) / 86400000) + 1;
+    currentDays = Math.round((currentEnd.getTime() - currentStart.getTime()) / 86400000) + 1;
   }
 
-  const totalDays = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
   const deferredDays = Math.max(0, totalDays - currentDays);
 
   return {
