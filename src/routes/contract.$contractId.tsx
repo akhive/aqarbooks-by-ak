@@ -28,6 +28,7 @@ import {
   fmtDate,
   useStore,
   type Cheque,
+  type ChequeStatus,
   type ContractStatus,
 } from "@/lib/store";
 
@@ -62,21 +63,15 @@ function toYmd(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-/** Equal instalments: same day of month, every (period months / count) months */
 function splitDates(startDate: string, endDate: string, count: number): string[] {
   if (!startDate || count < 1) return [];
-
   const start = new Date(startDate + "T12:00:00");
   const end = new Date((endDate || startDate) + "T12:00:00");
   const dayOfMonth = start.getDate();
 
-  // Months in the lease (e.g. 25 Aug 2025 → 24 Aug 2026 ≈ 12)
   let totalMonths =
     (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-  if (end.getDate() >= start.getDate()) totalMonths += 0;
-  // Prefer full 12 for a normal 1-year lease ending day-before anniversary
   if (totalMonths < 1) totalMonths = 1;
-  // If end is day before next anniversary, treat as full year span
   const approxDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
   if (approxDays >= 360 && approxDays <= 366) totalMonths = 12;
 
@@ -92,20 +87,31 @@ function splitDates(startDate: string, endDate: string, count: number): string[]
 }
 
 function addDays(iso: string, days: number) {
-  const d = new Date(iso);
+  const d = new Date(iso + "T12:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toYmd(d);
 }
 
 function ContractDetailPage() {
   const { contractId } = Route.useParams();
   const navigate = useNavigate();
-  const { data, loading, refresh, addCheque, updateCheque, deleteCheque, updateContract, addContract } =
-    useStore();
+  const {
+    data,
+    loading,
+    refresh,
+    addCheque,
+    updateCheque,
+    deleteCheque,
+    updateContract,
+    addContract,
+  } = useStore();
 
   const contract = data.contracts.find((c) => c.id === contractId);
   const tenant = data.tenants.find((t) => t.id === contract?.tenantId);
   const unit = data.units.find((u) => u.id === contract?.unitId);
+
+  const isDraft = contract?.status === "Draft";
+  const isActive = (contract?.status || "Active") === "Active";
 
   const rentCheques = useMemo(() => {
     if (!contract) return [];
@@ -133,12 +139,10 @@ function ContractDetailPage() {
     () => rentCheques.filter((c) => c.status === "Cleared" || c.status === "Deposited"),
     [rentCheques],
   );
-
   const pendingReturnPdcs = useMemo(
     () => rentCheques.filter((c) => c.status === "PDC"),
     [rentCheques],
   );
-
   const receivedTotal = clearedRent.reduce((s, c) => s + c.amount, 0);
   const pendingReturnTotal = pendingReturnPdcs.reduce((s, c) => s + c.amount, 0);
 
@@ -152,6 +156,7 @@ function ContractDetailPage() {
   const [chequeNo, setChequeNo] = useState("");
   const [chequeBank, setChequeBank] = useState("");
   const [chequeAmount, setChequeAmount] = useState(0);
+  const [chequeStatus, setChequeStatus] = useState<ChequeStatus>("PDC");
 
   const [actionOpen, setActionOpen] = useState(false);
   const [actionType, setActionType] = useState<ContractStatus>("Broken");
@@ -165,6 +170,14 @@ function ContractDetailPage() {
   const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
 
+  // Renew dialog
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewRent, setRenewRent] = useState(0);
+  const [renewDeposit, setRenewDeposit] = useState(0);
+  const [renewStart, setRenewStart] = useState("");
+  const [renewEnd, setRenewEnd] = useState("");
+  const [renewLeaseNo, setRenewLeaseNo] = useState("");
+
   useEffect(() => {
     setBanks(loadBanks());
   }, []);
@@ -176,9 +189,8 @@ function ContractDetailPage() {
     const received = rentCheques
       .filter((c) => c.status === "Cleared" || c.status === "Deposited")
       .reduce((s, c) => s + c.amount, 0);
-    const bal = used + penalty + extra - received - depositRefund;
     setCalcRent(used);
-    setBalance(bal);
+    setBalance(used + penalty + extra - received - depositRefund);
   }, [contract, actionOpen, breakDate, penalty, extra, depositRefund, rentCheques]);
 
   if (loading) {
@@ -200,7 +212,17 @@ function ContractDetailPage() {
     );
   }
 
-  const rev = calcRevenue(contract.startDate, contract.endDate, contract.rent);
+  const rentForRevenue =
+    contract.actualRent && contract.actualRent > 0 ? contract.actualRent : contract.rent;
+  const endForRevenue =
+    (contract.status === "Broken" ||
+      contract.status === "Cancelled" ||
+      contract.status === "Ended") &&
+    contract.endedAt
+      ? contract.endedAt
+      : contract.endDate;
+  const rev = calcRevenue(contract.startDate, endForRevenue, rentForRevenue);
+
   const rentTotal = rentCheques.reduce((s, c) => s + c.amount, 0);
   const depTotal = depositCheques.reduce((s, c) => s + c.amount, 0);
   const baseAmount = splitKind === "rent" ? contract.rent : contract.depositAmount || 0;
@@ -274,7 +296,7 @@ function ContractDetailPage() {
         notes,
         penalty: penalty || 0,
         extraCharges: extra || 0,
-        actualRent: calcRent || 0
+        actualRent: calcRent || 0,
       });
 
       toast.success(`Contract marked as ${actionType}`);
@@ -305,6 +327,7 @@ function ContractDetailPage() {
         chequeNo,
         bank: chequeBank,
         amount: chequeAmount,
+        status: chequeStatus,
       });
       toast.success("Cheque updated");
       setEditCheque(null);
@@ -316,10 +339,25 @@ function ContractDetailPage() {
     }
   };
 
-  const startRenew = async () => {
-    const duration = dayCount(contract.startDate, contract.endDate) - 1;
+  const removeCheque = async (id: string) => {
+    if (isActive) {
+      toast.error("Active contract — mark as Returned instead of deleting");
+      return;
+    }
+    if (!confirm("Delete this cheque?")) return;
+    try {
+      await deleteCheque(id);
+      toast.success("Deleted");
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message || "Failed");
+    }
+  };
+
+  const openRenew = () => {
+    const duration = Math.max(0, dayCount(contract.startDate, contract.endDate) - 1);
     const newStart = addDays(contract.endDate, 1);
-    const newEnd = addDays(newStart, Math.max(duration, 0));
+    const newEnd = addDays(newStart, duration);
     const nums = data.contracts
       .map((c) => {
         const m = (c.leaseNo || "").match(/(\d+)/);
@@ -328,27 +366,56 @@ function ContractDetailPage() {
       .filter((n) => n > 0);
     const next = String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0");
 
+    setRenewLeaseNo(next);
+    setRenewStart(newStart);
+    setRenewEnd(newEnd);
+    setRenewRent(0);
+    setRenewDeposit(contract.depositAmount || 0);
+    setRenewOpen(true);
+  };
+
+  const confirmRenew = async () => {
+    if (!renewRent || renewRent <= 0) {
+      toast.error("Enter renewal rent amount");
+      return;
+    }
+    setSaving(true);
     try {
       await addContract({
-        leaseNo: next,
+        leaseNo: renewLeaseNo,
         tenantId: contract.tenantId,
         unitId: contract.unitId,
         bedroomType: contract.bedroomType,
-        startDate: newStart,
-        endDate: newEnd,
-        rent: 0,
+        startDate: renewStart,
+        endDate: renewEnd,
+        rent: renewRent,
         previousRent: contract.rent,
-        status: "Active",
+        status: "Draft",
         notes: `Renewed from ${contract.leaseNo}`,
         endedAt: "",
-        depositAmount: contract.depositAmount || 0,
+        depositAmount: renewDeposit || 0,
         penalty: 0,
         extraCharges: 0,
+        actualRent: 0,
       });
-      toast.success(`Renewal lease ${next} created`);
+      toast.success(`Draft lease ${renewLeaseNo} created — add PDCs then Submit`);
+      setRenewOpen(false);
       navigate({ to: "/contracts" });
     } catch (e: any) {
       toast.error(e.message || "Renew failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitContract = async () => {
+    if (!confirm("Submit this contract? It becomes Active and will appear in reports.")) return;
+    try {
+      await updateContract(contract.id, { ...contract, status: "Active" });
+      toast.success("Contract submitted (Active)");
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message || "Failed");
     }
   };
 
@@ -363,11 +430,13 @@ function ContractDetailPage() {
   };
 
   const statusColor =
-    contract.status === "Active"
-      ? "bg-emerald-100 text-emerald-800"
-      : contract.status === "Ended"
-        ? "bg-slate-100 text-slate-800"
-        : "bg-red-100 text-red-800";
+    contract.status === "Draft"
+      ? "bg-amber-100 text-amber-900"
+      : contract.status === "Active"
+        ? "bg-emerald-100 text-emerald-800"
+        : contract.status === "Ended"
+          ? "bg-slate-100 text-slate-800"
+          : "bg-red-100 text-red-800";
 
   const ChequeTable = ({ rows, title }: { rows: Cheque[]; title: string }) => (
     <Card className="no-print mb-4">
@@ -391,7 +460,7 @@ function ContractDetailPage() {
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                  No cheques yet.
+                  No cheques yet. Use Split on this lease card.
                 </TableCell>
               </TableRow>
             )}
@@ -408,10 +477,12 @@ function ContractDetailPage() {
                         ? "bg-emerald-100 text-emerald-800"
                         : c.status === "Bounced"
                           ? "bg-red-100 text-red-800"
-                          : "bg-slate-100 text-slate-700"
+                          : c.status === "Returned"
+                            ? "bg-violet-100 text-violet-800"
+                            : "bg-slate-100 text-slate-700"
                     }`}
                   >
-                    {c.status}
+                    {c.status === "Returned" ? "Returned" : c.status}
                   </span>
                 </TableCell>
                 <TableCell>{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</TableCell>
@@ -426,19 +497,12 @@ function ContractDetailPage() {
                         setChequeNo(c.chequeNo || "");
                         setChequeBank(c.bank || "");
                         setChequeAmount(c.amount || 0);
+                        setChequeStatus(c.status || "PDC");
                       }}
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={async () => {
-                        if (!confirm("Delete this cheque?")) return;
-                        await deleteCheque(c.id);
-                        toast.success("Deleted");
-                      }}
-                    >
+                    <Button size="icon" variant="ghost" onClick={() => removeCheque(c.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
@@ -503,7 +567,7 @@ function ContractDetailPage() {
         <table className="w-full text-sm">
           <tbody>
             <tr>
-              <td>Calculated rent</td>
+              <td>Calculated / Actual rent</td>
               <td className="text-right">{currency(calcRent)}</td>
             </tr>
             <tr>
@@ -511,7 +575,7 @@ function ContractDetailPage() {
               <td className="text-right">{currency(penalty)}</td>
             </tr>
             <tr>
-              <td>Extra charges (other income)</td>
+              <td>Extra charges</td>
               <td className="text-right">{currency(extra)}</td>
             </tr>
             <tr>
@@ -547,6 +611,9 @@ function ContractDetailPage() {
           description={`${tenant?.name || "—"} · Unit ${unit?.flatNo || "—"}`}
           action={
             <div className="flex flex-wrap gap-2">
+              {isDraft && (
+                <Button onClick={submitContract}>Submit contract</Button>
+              )}
               <Button variant="outline" onClick={() => openSplit("rent")}>
                 <Plus className="mr-2 h-4 w-4" />
                 Split rent PDCs
@@ -555,28 +622,43 @@ function ContractDetailPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 Split deposit
               </Button>
-              <Button variant="outline" onClick={startRenew}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Renew
-              </Button>
-              <Button variant="outline" onClick={() => openBreak("Ended")}>
-                End / Vacate
-              </Button>
-              <Button variant="outline" onClick={() => openBreak("Cancelled")}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={() => openBreak("Broken")}>
-                Break Contract
-              </Button>
+              {!isDraft && (
+                <Button variant="outline" onClick={openRenew}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Renew
+                </Button>
+              )}
+              {isActive && (
+                <>
+                  <Button variant="outline" onClick={() => openBreak("Ended")}>
+                    End / Vacate
+                  </Button>
+                  <Button variant="outline" onClick={() => openBreak("Cancelled")}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" onClick={() => openBreak("Broken")}>
+                    Break Contract
+                  </Button>
+                </>
+              )}
             </div>
           }
         />
+
+        {isDraft && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <strong>Draft</strong> — add / edit PDCs here, then click <strong>Submit contract</strong>.
+            Draft leases do not appear in reports until submitted.
+          </div>
+        )}
 
         <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Status</p>
-              <span className={`mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusColor}`}>
+              <span
+                className={`mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusColor}`}
+              >
                 {contract.status || "Active"}
               </span>
             </CardContent>
@@ -689,6 +771,7 @@ function ContractDetailPage() {
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
       </div>
 
+      {/* Split PDCs */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -735,6 +818,7 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit cheque */}
       <Dialog open={!!editCheque} onOpenChange={(o) => !o && setEditCheque(null)}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -770,6 +854,24 @@ function ContractDetailPage() {
                 onChange={(e) => setChequeAmount(Number(e.target.value))}
               />
             </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={chequeStatus}
+                onValueChange={(v) => setChequeStatus(v as ChequeStatus)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PDC">PDC</SelectItem>
+                  <SelectItem value="Deposited">Deposited</SelectItem>
+                  <SelectItem value="Cleared">Cleared</SelectItem>
+                  <SelectItem value="Bounced">Bounced</SelectItem>
+                  <SelectItem value="Returned">Returned to tenant</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditCheque(null)}>
@@ -782,6 +884,65 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Renew confirmation */}
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent className="no-print">
+          <DialogHeader>
+            <DialogTitle>Confirm renewal</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>New lease no</Label>
+              <Input value={renewLeaseNo} onChange={(e) => setRenewLeaseNo(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start</Label>
+                <Input
+                  type="date"
+                  value={renewStart}
+                  onChange={(e) => setRenewStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>End</Label>
+                <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Renewal rent (AED) *</Label>
+              <Input
+                type="number"
+                value={renewRent || ""}
+                onChange={(e) => setRenewRent(Number(e.target.value))}
+                placeholder="Enter new annual rent"
+              />
+            </div>
+            <div>
+              <Label>Deposit (AED)</Label>
+              <Input
+                type="number"
+                value={renewDeposit || ""}
+                onChange={(e) => setRenewDeposit(Number(e.target.value))}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Previous rent: {currency(contract.rent)}. Creates a <strong>Draft</strong> lease —
+              add PDCs, then Submit.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenewOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRenew} disabled={saving}>
+              Create draft lease
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settlement */}
       <Dialog open={actionOpen} onOpenChange={setActionOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -793,7 +954,6 @@ function ContractDetailPage() {
                   : "End / Vacate — Settlement"}
             </DialogTitle>
           </DialogHeader>
-
           <div className="space-y-3">
             <div>
               <Label>Break / end date</Label>
@@ -802,10 +962,9 @@ function ContractDetailPage() {
                 Days = {dayCount(contract.startDate, breakDate)} · rent ÷ 365 × days
               </p>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Calculated rent</Label>
+                <Label>Calculated rent → Actual rent</Label>
                 <Input
                   type="number"
                   value={calcRent}
@@ -837,7 +996,6 @@ function ContractDetailPage() {
                 />
               </div>
             </div>
-
             <div className="rounded-md border p-3">
               <p className="mb-2 text-sm font-medium">
                 Collected (Cleared) — {currency(receivedTotal)}
@@ -857,7 +1015,6 @@ function ContractDetailPage() {
                 </ul>
               )}
             </div>
-
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
               <p className="mb-2 text-sm font-medium text-amber-900">
                 Pending PDCs to return — {currency(pendingReturnTotal)}
@@ -877,7 +1034,6 @@ function ContractDetailPage() {
                 </ul>
               )}
             </div>
-
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
               <div className="flex justify-between">
                 <span>Calculated rent</span>
@@ -902,7 +1058,6 @@ function ContractDetailPage() {
                 </span>
               </div>
             </div>
-
             <div>
               <Label>Balance (editable)</Label>
               <Input
@@ -911,13 +1066,11 @@ function ContractDetailPage() {
                 onChange={(e) => setBalance(Number(e.target.value))}
               />
             </div>
-
             <div>
               <Label>Notes</Label>
               <Input value={actionNotes} onChange={(e) => setActionNotes(e.target.value)} />
             </div>
-          </div> 
-
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={printSettlement}>
               <Printer className="mr-2 h-4 w-4" />
