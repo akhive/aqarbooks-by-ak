@@ -834,3 +834,116 @@ function ReportsPage() {
                       <TableCell>{tenantName(r.tenantId)}</TableCell>
                       <TableCell>{unitLabel(r.unitId)}</TableCell>
                       <TableCell>{fmtDate(r.startDate)}</TableCell>
+                      <TableCell>{fmtDate(r.endDate)}</TableCell>
+                      <TableCell>{r.chequeNo || "—"}</TableCell>
+                      <TableCell>{r.bank || "—"}</TableCell>
+                      <TableCell className="text-right">{currency(r.depositAmount)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {depositRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={7}>TOTAL</TableCell>
+                      <TableCell className="text-right">{currency(depositTotal)}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="other-income">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">Other incomes</CardTitle>
+                <CardDescription>
+                  Penalty &amp; extra charges · {otherIncomeRows.length} lease(s)
+                </CardDescription>
+              </div>
+              <ReportActions
+                onExport={() =>
+                  exportCSV(
+                    `other_incomes.csv`,
+                    ["Lease No", "Tenant", "Period", "Penalty", "Other income", "Total"],
+                    otherIncomeRows.map((r) => [
+                      r.leaseNo,
+                      tenantName(r.tenantId),
+                      `${r.startDate} → ${r.endDate}`,
+                      r.penalty,
+                      r.otherIncome,
+                      r.total,
+                    ]),
+                  )
+                }
+              />
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lease No</TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead className="text-right">Penalty</TableHead>
+                    <TableHead className="text-right">Other income</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {otherIncomeRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                        No penalty / extra charges yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {otherIncomeRows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
+                      <TableCell>{tenantName(r.tenantId)}</TableCell>
+                      <TableCell>
+                        {fmtDate(r.startDate)} → {fmtDate(r.endDate)}
+                        {r.endedAt ? (
+                          <span className="block text-xs text-muted-foreground">
+                            Ended {fmtDate(r.endedAt)} · {r.status}
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-right">{currency(r.penalty)}</TableCell>
+                      <TableCell className="text-right">{currency(r.otherIncome)}</TableCell>
+                      <TableCell className="text-right font-medium">{currency(r.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {otherIncomeRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={3}>TOTAL</TableCell>
+                      <TableCell className="text-right">
+                        {currency(otherIncomeTotals.penalty)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {currency(otherIncomeTotals.otherIncome)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {currency(otherIncomeTotals.total)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          header, nav, aside { display: none !important; }
+          body { background: white; }
+        }
+      `}</style>
+    </AppShell>
+  );
+}
