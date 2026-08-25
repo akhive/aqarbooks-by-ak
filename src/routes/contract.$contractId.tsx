@@ -254,6 +254,7 @@ function ContractDetailPage() {
         notes,
         penalty: penalty || 0,
         extraCharges: extra || 0,
+        actualRent: calcRent || 0
       });
 
       toast.success(`Contract marked as ${actionType}`);
@@ -885,7 +886,7 @@ function ContractDetailPage() {
               <Label>Notes</Label>
               <Input value={actionNotes} onChange={(e) => setActionNotes(e.target.value)} />
             </div>
-          </div>
+          </div> 
 
           <DialogFooter>
             <Button variant="outline" onClick={printSettlement}>
