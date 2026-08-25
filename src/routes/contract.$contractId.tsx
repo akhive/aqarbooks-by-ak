@@ -30,7 +30,6 @@ import {
   type Cheque,
   type ContractStatus,
 } from "@/lib/store";
-import { supabase } from "../supabase";
 
 export const Route = createFileRoute("/contract/$contractId")({
   component: ContractDetailPage,
@@ -243,7 +242,7 @@ function ContractDetailPage() {
     try {
       const notes = [
         actionNotes,
-        `Settlement: calc ${calcRent} (rent/365*days), cleared ${receivedTotal}, pending PDC return ${pendingReturnTotal}, penalty ${penalty}, extra ${extra}, deposit refund ${depositRefund}, balance ${balance}`,
+        `Settlement: calc ${calcRent}, cleared ${receivedTotal}, pending PDC ${pendingReturnTotal}, penalty ${penalty}, extra ${extra}, deposit refund ${depositRefund}, balance ${balance}`,
       ]
         .filter(Boolean)
         .join(" | ");
@@ -253,15 +252,9 @@ function ContractDetailPage() {
         status: actionType,
         endedAt: breakDate,
         notes,
+        penalty: penalty || 0,
+        extraCharges: extra || 0,
       });
-      await supabase
-        .from("contracts")
-        .update({
-          status: actionType,
-          ended_at: breakDate,
-          notes,
-        })
-        .eq("id", contract.id);
 
       toast.success(`Contract marked as ${actionType}`);
       setActionOpen(false);
@@ -328,8 +321,10 @@ function ContractDetailPage() {
         notes: `Renewed from ${contract.leaseNo}`,
         endedAt: "",
         depositAmount: contract.depositAmount || 0,
+        penalty: 0,
+        extraCharges: 0,
       });
-      toast.success(`Renewal lease ${next} created — set new rent on Contracts`);
+      toast.success(`Renewal lease ${next} created`);
       navigate({ to: "/contracts" });
     } catch (e: any) {
       toast.error(e.message || "Renew failed");
@@ -437,13 +432,12 @@ function ContractDetailPage() {
 
   return (
     <AppShell>
-      {/* PRINTABLE SETTLEMENT */}
       <div
         id="settlement-print"
         style={printMode ? { display: "block", padding: 24 } : { display: "none" }}
       >
         <div className="mb-6 flex items-center gap-3 border-b pb-4">
-          <div className="flex size-12 items-center justify-center rounded-lg bg-black text-white font-bold">
+          <div className="flex size-12 items-center justify-center rounded-lg bg-black font-bold text-white">
             AK
           </div>
           <div>
@@ -466,16 +460,13 @@ function ContractDetailPage() {
         <p>
           <strong>Period:</strong> {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
         </p>
-        <p>
-          <strong>Days occupied:</strong> {dayCount(contract.startDate, breakDate)}
-        </p>
         <hr className="my-4" />
-        <p className="font-semibold">Collected (Cleared / Deposited)</p>
+        <p className="font-semibold">Collected (Cleared)</p>
         <ul className="mb-3 text-sm">
           {clearedRent.length === 0 && <li>None</li>}
           {clearedRent.map((c) => (
             <li key={c.id}>
-              {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.bank || "—"} · {currency(c.amount)}
+              {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {currency(c.amount)}
             </li>
           ))}
         </ul>
@@ -484,23 +475,23 @@ function ContractDetailPage() {
           {pendingReturnPdcs.length === 0 && <li>None</li>}
           {pendingReturnPdcs.map((c) => (
             <li key={c.id}>
-              {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.bank || "—"} · {currency(c.amount)}
+              {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {currency(c.amount)}
             </li>
           ))}
         </ul>
         <table className="w-full text-sm">
           <tbody>
             <tr>
-              <td>Annual rent</td>
-              <td className="text-right">{currency(contract.rent)}</td>
-            </tr>
-            <tr>
-              <td>Calculated rent (rent÷365×days)</td>
+              <td>Calculated rent</td>
               <td className="text-right">{currency(calcRent)}</td>
             </tr>
             <tr>
-              <td>Penalty + Extra</td>
-              <td className="text-right">{currency(penalty + extra)}</td>
+              <td>Penalty</td>
+              <td className="text-right">{currency(penalty)}</td>
+            </tr>
+            <tr>
+              <td>Extra charges (other income)</td>
+              <td className="text-right">{currency(extra)}</td>
             </tr>
             <tr>
               <td>Collected (cleared)</td>
@@ -518,11 +509,6 @@ function ContractDetailPage() {
             </tr>
           </tbody>
         </table>
-        {actionNotes && (
-          <p className="mt-4">
-            <strong>Notes:</strong> {actionNotes}
-          </p>
-        )}
       </div>
 
       <div className="no-print">
@@ -624,6 +610,14 @@ function ContractDetailPage() {
                   {currency(rev.currentYear)} / {currency(rev.deferred)}
                 </span>
               </div>
+              {(contract.penalty || 0) > 0 || (contract.extraCharges || 0) > 0 ? (
+                <div className="flex justify-between border-t pt-2">
+                  <span className="text-muted-foreground">Penalty / Extra</span>
+                  <span>
+                    {currency(contract.penalty || 0)} / {currency(contract.extraCharges || 0)}
+                  </span>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -664,7 +658,6 @@ function ContractDetailPage() {
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
       </div>
 
-      {/* Split */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -674,8 +667,8 @@ function ContractDetailPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Amount {currency(baseAmount)} ·{" "}
-              {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
+              Amount {currency(baseAmount)} · {fmtDate(contract.startDate)} →{" "}
+              {fmtDate(contract.endDate)}
             </p>
             <div>
               <Label>Number of cheques</Label>
@@ -711,7 +704,6 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit cheque */}
       <Dialog open={!!editCheque} onOpenChange={(o) => !o && setEditCheque(null)}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -759,7 +751,6 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Settlement */}
       <Dialog open={actionOpen} onOpenChange={setActionOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -777,7 +768,7 @@ function ContractDetailPage() {
               <Label>Break / end date</Label>
               <Input type="date" value={breakDate} onChange={(e) => setBreakDate(e.target.value)} />
               <p className="mt-1 text-xs text-muted-foreground">
-                Days = {dayCount(contract.startDate, breakDate)} · Formula: rent ÷ 365 × days
+                Days = {dayCount(contract.startDate, breakDate)} · rent ÷ 365 × days
               </p>
             </div>
 
@@ -799,7 +790,7 @@ function ContractDetailPage() {
                 />
               </div>
               <div>
-                <Label>Extra charges</Label>
+                <Label>Extra charges (other income)</Label>
                 <Input
                   type="number"
                   value={extra}
@@ -818,7 +809,7 @@ function ContractDetailPage() {
 
             <div className="rounded-md border p-3">
               <p className="mb-2 text-sm font-medium">
-                Cheques collected (Cleared / Deposited) — {currency(receivedTotal)}
+                Collected (Cleared) — {currency(receivedTotal)}
               </p>
               {clearedRent.length === 0 ? (
                 <p className="text-xs text-muted-foreground">None cleared yet.</p>
@@ -827,9 +818,9 @@ function ContractDetailPage() {
                   {clearedRent.map((c) => (
                     <li key={c.id} className="flex justify-between gap-2">
                       <span>
-                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.bank || "—"}
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"}
                       </span>
-                      <span className="font-medium">{currency(c.amount)}</span>
+                      <span>{currency(c.amount)}</span>
                     </li>
                   ))}
                 </ul>
@@ -847,16 +838,13 @@ function ContractDetailPage() {
                   {pendingReturnPdcs.map((c) => (
                     <li key={c.id} className="flex justify-between gap-2">
                       <span>
-                        {fmtDate(c.chequeDate)} · Chq {c.chequeNo || "—"} · {c.bank || "—"}
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"}
                       </span>
-                      <span className="font-medium">{currency(c.amount)}</span>
+                      <span>{currency(c.amount)}</span>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="mt-2 text-xs text-amber-800">
-                Not counted as received. Return/cancel these cheques.
-              </p>
             </div>
 
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
@@ -869,7 +857,7 @@ function ContractDetailPage() {
                 <span>{currency(penalty + extra)}</span>
               </div>
               <div className="flex justify-between">
-                <span>− Collected (cleared)</span>
+                <span>− Collected</span>
                 <span>{currency(receivedTotal)}</span>
               </div>
               <div className="flex justify-between">
@@ -878,7 +866,7 @@ function ContractDetailPage() {
               </div>
               <div className="flex justify-between border-t pt-2 font-semibold">
                 <span>Balance</span>
-                <span className={balance >= 0 ? "text-amber-700" : "text-emerald-700"}>
+                <span>
                   {currency(balance)} {balance >= 0 ? "(Receivable)" : "(Payable)"}
                 </span>
               </div>
