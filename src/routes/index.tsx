@@ -35,17 +35,36 @@ export const Route = createFileRoute("/")({
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const PIE_COLORS = ["#0f766e", "#2563eb", "#d97706"];
 
-function rentInYear(startDate: string, endDate: string, rent: number, year: number) {
+function effectiveRent(c: { rent: number; actualRent?: number }) {
+  return c.actualRent && c.actualRent > 0 ? c.actualRent : c.rent;
+}
+
+function effectiveEnd(c: { endDate: string; endedAt?: string; status?: string }) {
+  if (
+    (c.status === "Broken" || c.status === "Cancelled" || c.status === "Ended") &&
+    c.endedAt
+  ) {
+    return c.endedAt;
+  }
+  return c.endDate;
+}
+
+/** Accrue rent into calendar year using rent ÷ lease-days */
+function rentInYear(startDate: string, endDate: string, rent: number, y: number) {
   if (!startDate || !endDate || !rent) return 0;
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const yStart = new Date(year, 0, 1);
-  const yEnd = new Date(year, 11, 31);
+  const start = new Date(startDate + "T12:00:00");
+  const end = new Date(endDate + "T12:00:00");
+  if (end < start) return 0;
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (totalDays <= 0) return 0;
+
+  const yStart = new Date(y, 0, 1, 12, 0, 0);
+  const yEnd = new Date(y, 11, 31, 12, 0, 0);
   const from = start > yStart ? start : yStart;
   const to = end < yEnd ? end : yEnd;
   if (to < from) return 0;
-  const days = Math.ceil((to.getTime() - from.getTime()) / 86400000) + 1;
-  return Math.round((rent / 365) * days);
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  return Math.round((rent / totalDays) * days);
 }
 
 function Stat({
@@ -95,20 +114,57 @@ function Dashboard() {
   const year = new Date().getFullYear();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { income, expense, monthly } = useMemo(() => {
+  /**
+   * Income (accrual) =
+   *   sum of each contract's rent share for this calendar year
+   *   + penalty + extra charges ended this year
+   * (Previous-year deferred is included automatically as this year's share.)
+   * Net profit = Income − expenses
+   */
+  const { income, expense, monthly, otherIncome } = useMemo(() => {
     const monthly = MONTHS.map((m) => ({ month: m, income: 0, expense: 0, profit: 0 }));
     let income = 0;
+    let otherIncome = 0;
     let expense = 0;
-    data.cheques.forEach((c) => {
-      if (!c.chequeDate) return;
-      const dt = new Date(c.chequeDate);
-      if (dt.getFullYear() !== year || c.status === "Bounced") return;
-      if ((c.kind || "rent") === "deposit") return;
-      if (c.status === "Cleared" || c.status === "Deposited") {
-        income += c.amount;
-        monthly[dt.getMonth()]!.income += c.amount;
+
+    data.contracts.forEach((c) => {
+      if ((c.status || "Active") === "Draft") return;
+
+      const r = effectiveRent(c);
+      const end = effectiveEnd(c);
+      const yearAmt = rentInYear(c.startDate, end, r, year);
+      income += yearAmt;
+
+      // monthly breakdown for chart
+      if (yearAmt > 0 && c.startDate && end) {
+        const start = new Date(c.startDate + "T12:00:00");
+        const endD = new Date(end + "T12:00:00");
+        const totalDays = Math.round((endD.getTime() - start.getTime()) / 86400000) + 1;
+        if (totalDays > 0) {
+          for (let m = 0; m < 12; m++) {
+            const mStart = new Date(year, m, 1, 12, 0, 0);
+            const mEnd = new Date(year, m + 1, 0, 12, 0, 0);
+            const from = start > mStart ? start : mStart;
+            const to = endD < mEnd ? endD : mEnd;
+            if (to < from) continue;
+            const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+            monthly[m]!.income += Math.round((r / totalDays) * days);
+          }
+        }
+      }
+
+      const pen = (c.penalty || 0) + (c.extraCharges || 0);
+      if (pen > 0) {
+        const endIso = c.endedAt || c.endDate;
+        if (endIso && new Date(endIso).getFullYear() === year) {
+          otherIncome += pen;
+          income += pen;
+          const m = new Date(endIso).getMonth();
+          monthly[m]!.income += pen;
+        }
       }
     });
+
     data.expenses.forEach((e) => {
       if (!e.date) return;
       const dt = new Date(e.date);
@@ -116,15 +172,18 @@ function Dashboard() {
       expense += e.amount;
       monthly[dt.getMonth()]!.expense += e.amount;
     });
+
     monthly.forEach((m) => {
       m.profit = m.income - m.expense;
     });
-    return { income, expense, monthly };
+
+    return { income, expense, monthly, otherIncome };
   }, [data, year]);
 
   const { occupiedCount, vacant, totalUnits } = useMemo(() => {
     const occupiedUnitIds = new Set<string>();
     data.contracts.forEach((c) => {
+      if ((c.status || "Active") === "Draft") return;
       if ((c.status || "Active") !== "Active") return;
       if (!c.unitId) return;
       if (c.startDate && c.startDate > today) return;
@@ -141,25 +200,30 @@ function Dashboard() {
 
   const { avgRent, hikePct } = useMemo(() => {
     const active = data.contracts.filter((c) => {
+      if ((c.status || "Active") === "Draft") return false;
       if ((c.status || "Active") !== "Active") return false;
       if (c.startDate && c.startDate > today) return false;
       if (c.endDate && c.endDate < today) return false;
       return true;
     });
     const avgRent =
-      active.length > 0 ? Math.round(active.reduce((s, c) => s + (c.rent || 0), 0) / active.length) : 0;
+      active.length > 0
+        ? Math.round(active.reduce((s, c) => s + effectiveRent(c), 0) / active.length)
+        : 0;
 
     const prevYear = year - 1;
     const prevStart = `${prevYear}-01-01`;
     const prevEnd = `${prevYear}-12-31`;
     const prevContracts = data.contracts.filter((c) => {
+      if ((c.status || "Active") === "Draft") return false;
       if (!c.startDate || !c.endDate) return false;
-      if (c.endDate < prevStart || c.startDate > prevEnd) return false;
+      const end = effectiveEnd(c);
+      if (end < prevStart || c.startDate > prevEnd) return false;
       return true;
     });
     const prevAvgRent =
       prevContracts.length > 0
-        ? Math.round(prevContracts.reduce((s, c) => s + (c.rent || 0), 0) / prevContracts.length)
+        ? Math.round(prevContracts.reduce((s, c) => s + effectiveRent(c), 0) / prevContracts.length)
         : 0;
 
     let hikePct: number | null = null;
@@ -174,7 +238,13 @@ function Dashboard() {
     return years.map((y) => {
       let total = 0;
       data.contracts.forEach((c) => {
-        total += rentInYear(c.startDate, c.endDate, c.rent, y);
+        if ((c.status || "Active") === "Draft") return;
+        total += rentInYear(c.startDate, effectiveEnd(c), effectiveRent(c), y);
+        const pen = (c.penalty || 0) + (c.extraCharges || 0);
+        if (pen > 0) {
+          const endIso = c.endedAt || c.endDate;
+          if (endIso && new Date(endIso).getFullYear() === y) total += pen;
+        }
       });
       return { name: String(y), value: total };
     });
@@ -186,18 +256,21 @@ function Dashboard() {
         .filter((c) => {
           if (c.status !== "PDC") return false;
           if ((c.kind || "rent") === "deposit") return false;
+          const contract = data.contracts.find((x) => x.id === c.contractId);
+          if (contract && contract.status === "Draft") return false;
           const d = daysUntil(c.chequeDate);
           return d >= -3 && d <= 120;
         })
         .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate))
         .slice(0, 10),
-    [data.cheques],
+    [data.cheques, data.contracts],
   );
 
   const upcomingRenewals = useMemo(
     () =>
       data.contracts
         .filter((c) => {
+          if ((c.status || "Active") === "Draft") return false;
           if ((c.status || "Active") !== "Active") return false;
           if (!c.endDate) return false;
           const d = daysUntil(c.endDate);
@@ -221,12 +294,17 @@ function Dashboard() {
 
   return (
     <AppShell>
-      <PageHeader title="Dashboard" description={`Portfolio performance for ${year}`} />
+      <PageHeader title="Dashboard" description={`Accrual performance for ${year}`} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
-          label="Income (collected)"
+          label="Income (accrual)"
           value={currency(income)}
+          hint={
+            otherIncome
+              ? `Lease revenue + penalty/extra ${currency(otherIncome)}`
+              : "This year rent share (incl. prior deferred)"
+          }
           icon={ArrowUpRight}
           tone="positive"
         />
@@ -234,7 +312,7 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint={income ? `${Math.round((profit / income) * 100)}% margin` : undefined}
+          hint="Revenue + penalty/extra − expenses"
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
         />
