@@ -611,6 +611,16 @@ function ContractDetailPage() {
                   {currency(rev.currentYear)} / {currency(rev.deferred)}
                 </span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Actual rent</span>
+                <span>
+                  {currency(
+                    contract.actualRent && contract.actualRent > 0
+                      ? contract.actualRent
+                      : contract.rent,
+                  )}
+                </span>
+              </div>
               {(contract.penalty || 0) > 0 || (contract.extraCharges || 0) > 0 ? (
                 <div className="flex justify-between border-t pt-2">
                   <span className="text-muted-foreground">Penalty / Extra</span>
