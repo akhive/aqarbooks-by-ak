@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
+import { currency, daysUntil, fmtDate, useStore, type Contract } from "@/lib/store";
 
 export const Route = createFileRoute("/reports")({
   head: () => ({
@@ -33,6 +33,20 @@ function splitByYear(startDate: string, endDate: string, rent: number) {
     result[y] = Math.round(daily * days);
   }
   return result;
+}
+
+function effectiveRent(c: { rent: number; actualRent?: number }) {
+  return c.actualRent && c.actualRent > 0 ? c.actualRent : c.rent;
+}
+
+function effectiveEnd(c: { endDate: string; endedAt?: string; status?: string }) {
+  if (
+    (c.status === "Broken" || c.status === "Cancelled" || c.status === "Ended") &&
+    c.endedAt
+  ) {
+    return c.endedAt;
+  }
+  return c.endDate;
 }
 
 function exportCSV(filename: string, headers: string[], rows: (string | number)[][]) {
@@ -115,7 +129,7 @@ function ReportsPage() {
     });
   }, [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch, leaseSort]);
 
-  const leaseTotal = leaseRows.reduce((s, c) => s + c.rent, 0);
+  const leaseTotal = leaseRows.reduce((s, c) => s + effectiveRent(c), 0);
 
   const incomeRows = useMemo(() => {
     const rows = data.contracts
@@ -126,14 +140,14 @@ function ReportsPage() {
         return true;
       })
       .map((c) => {
-        const byYear = splitByYear(c.startDate, c.endDate, c.rent);
+        const byYear = splitByYear(c.startDate, effectiveEnd(c), effectiveRent(c));
         const previous = byYear[prevYear] || 0;
         const current = byYear[year] || 0;
         let deferred = 0;
         Object.entries(byYear).forEach(([y, amt]) => {
           if (Number(y) > year) deferred += amt;
         });
-        return { ...c, previous, current, deferred, total: c.rent };
+        return { ...c, previous, current, deferred, total: effectiveRent(c) };
       });
     return [...rows].sort((a, b) => {
       const an = a.leaseNo || "";
@@ -174,9 +188,11 @@ function ReportsPage() {
 
   const yearly = useMemo(() => {
     const map = new Map<number, { income: number; expense: number }>();
+
     data.contracts.forEach((c) => {
       if (!matchTenantFlat(c.tenantId, c.unitId)) return;
-      const byYear = splitByYear(c.startDate, c.endDate, c.rent);
+
+      const byYear = splitByYear(c.startDate, effectiveEnd(c), effectiveRent(c));
       Object.entries(byYear).forEach(([y, amt]) => {
         const yr = Number(y);
         if (from && `${yr}-12-31` < from) return;
@@ -185,7 +201,21 @@ function ReportsPage() {
         row.income += amt;
         map.set(yr, row);
       });
+
+      const other = (c.penalty || 0) + (c.extraCharges || 0);
+      if (other > 0) {
+        const endIso = c.endedAt || c.endDate;
+        if (endIso) {
+          const yr = new Date(endIso).getFullYear();
+          if (!(from && `${yr}-12-31` < from) && !(to && `${yr}-01-01` > to)) {
+            const row = map.get(yr) ?? { income: 0, expense: 0 };
+            row.income += other;
+            map.set(yr, row);
+          }
+        }
+      }
     });
+
     data.expenses.forEach((e) => {
       if (!e.date) return;
       if (from && e.date < from) return;
@@ -195,6 +225,7 @@ function ReportsPage() {
       row.expense += e.amount;
       map.set(y, row);
     });
+
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [data.contracts, data.expenses, data.tenants, data.units, from, to, tenantSearch, flatSearch]);
 
@@ -283,12 +314,7 @@ function ReportsPage() {
       .map((c) => {
         const penalty = c.penalty || 0;
         const otherIncome = c.extraCharges || 0;
-        return {
-          ...c,
-          penalty,
-          otherIncome,
-          total: penalty + otherIncome,
-        };
+        return { ...c, penalty, otherIncome, total: penalty + otherIncome };
       })
       .sort((a, b) => (b.endedAt || b.endDate || "").localeCompare(a.endedAt || a.endDate || ""));
   }, [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch]);
@@ -324,7 +350,7 @@ function ReportsPage() {
       <div className="no-print">
         <PageHeader
           title="Reports"
-          description="Period, tenant and flat filters · Excel export and Print/PDF"
+          description="Actual rent used when set · Period / tenant / flat filters"
         />
       </div>
 
@@ -389,14 +415,14 @@ function ReportsPage() {
               <div>
                 <CardTitle className="text-base">Lease report</CardTitle>
                 <CardDescription>
-                  {leaseRows.length} contract(s) · Total {currency(leaseTotal)}
+                  {leaseRows.length} contract(s) · Total actual rent {currency(leaseTotal)}
                 </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `lease_report.csv`,
-                    ["Lease No", "Tenant", "Unit", "Start", "End", "Rent"],
+                    ["Lease No", "Tenant", "Unit", "Start", "End", "Contract Rent", "Actual Rent"],
                     leaseRows.map((c) => [
                       c.leaseNo,
                       tenantName(c.tenantId),
@@ -404,6 +430,7 @@ function ReportsPage() {
                       c.startDate,
                       c.endDate,
                       c.rent,
+                      effectiveRent(c),
                     ]),
                   )
                 }
@@ -426,13 +453,14 @@ function ReportsPage() {
                     <TableHead>Unit</TableHead>
                     <TableHead>Start</TableHead>
                     <TableHead>End</TableHead>
-                    <TableHead className="text-right">Rent</TableHead>
+                    <TableHead className="text-right">Contract rent</TableHead>
+                    <TableHead className="text-right">Actual rent</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {leaseRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                         No contracts match filters.
                       </TableCell>
                     </TableRow>
@@ -443,13 +471,16 @@ function ReportsPage() {
                       <TableCell>{tenantName(c.tenantId)}</TableCell>
                       <TableCell>{unitLabel(c.unitId)}</TableCell>
                       <TableCell>{fmtDate(c.startDate)}</TableCell>
-                      <TableCell>{fmtDate(c.endDate)}</TableCell>
+                      <TableCell>{fmtDate(effectiveEnd(c))}</TableCell>
                       <TableCell className="text-right">{currency(c.rent)}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {currency(effectiveRent(c))}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {leaseRows.length > 0 && (
                     <TableRow className="bg-muted/40 font-semibold">
-                      <TableCell colSpan={5}>TOTAL</TableCell>
+                      <TableCell colSpan={6}>TOTAL (actual rent)</TableCell>
                       <TableCell className="text-right">{currency(leaseTotal)}</TableCell>
                     </TableRow>
                   )}
@@ -465,14 +496,14 @@ function ReportsPage() {
               <div>
                 <CardTitle className="text-base">Income breakdown</CardTitle>
                 <CardDescription>
-                  {prevYear} · {year} (current) · Deferred
+                  Based on actual rent · {prevYear} · {year} · Deferred
                 </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `income_breakdown.csv`,
-                    ["Lease No", "Tenant", "Total Rent", String(prevYear), String(year), "Deferred"],
+                    ["Lease No", "Tenant", "Actual Rent", String(prevYear), String(year), "Deferred"],
                     incomeRows.map((r) => [
                       r.leaseNo,
                       tenantName(r.tenantId),
@@ -500,7 +531,7 @@ function ReportsPage() {
                     </TableHead>
                     <TableHead>Tenant</TableHead>
                     <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Total Rent</TableHead>
+                    <TableHead className="text-right">Actual rent</TableHead>
                     <TableHead className="text-right">{prevYear}</TableHead>
                     <TableHead className="text-right">{year}</TableHead>
                     <TableHead className="text-right">Deferred</TableHead>
@@ -512,7 +543,7 @@ function ReportsPage() {
                       <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
                       <TableCell>{tenantName(r.tenantId)}</TableCell>
                       <TableCell>
-                        {fmtDate(r.startDate)} → {fmtDate(r.endDate)}
+                        {fmtDate(r.startDate)} → {fmtDate(effectiveEnd(r))}
                       </TableCell>
                       <TableCell className="text-right">{currency(r.total)}</TableCell>
                       <TableCell className="text-right">{currency(r.previous)}</TableCell>
@@ -594,7 +625,9 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Yearly profit</CardTitle>
-                <CardDescription>Income from leases (accrual) minus expenses</CardDescription>
+                <CardDescription>
+                  Actual rent + penalty + extra charges − expenses
+                </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
@@ -801,119 +834,3 @@ function ReportsPage() {
                       <TableCell>{tenantName(r.tenantId)}</TableCell>
                       <TableCell>{unitLabel(r.unitId)}</TableCell>
                       <TableCell>{fmtDate(r.startDate)}</TableCell>
-                      <TableCell>{fmtDate(r.endDate)}</TableCell>
-                      <TableCell>{r.chequeNo || "—"}</TableCell>
-                      <TableCell>{r.bank || "—"}</TableCell>
-                      <TableCell className="text-right">{currency(r.depositAmount)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {depositRows.length > 0 && (
-                    <TableRow className="bg-muted/40 font-semibold">
-                      <TableCell colSpan={7}>TOTAL</TableCell>
-                      <TableCell className="text-right">{currency(depositTotal)}</TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Other incomes — penalty + extra charges */}
-        <TabsContent value="other-income">
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
-              <div>
-                <CardTitle className="text-base">Other incomes</CardTitle>
-                <CardDescription>
-                  Penalty &amp; extra charges from break / cancel · {otherIncomeRows.length}{" "}
-                  lease(s)
-                </CardDescription>
-              </div>
-              <ReportActions
-                onExport={() =>
-                  exportCSV(
-                    `other_incomes.csv`,
-                    ["Lease No", "Tenant", "Period", "Penalty", "Other income", "Total"],
-                    otherIncomeRows.map((r) => [
-                      r.leaseNo,
-                      tenantName(r.tenantId),
-                      `${r.startDate} → ${r.endDate}`,
-                      r.penalty,
-                      r.otherIncome,
-                      r.total,
-                    ]),
-                  )
-                }
-              />
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Lease No</TableHead>
-                    <TableHead>Tenant</TableHead>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Penalty</TableHead>
-                    <TableHead className="text-right">Other income</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {otherIncomeRows.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                        No penalty / extra charges yet. Enter them when breaking or cancelling a
-                        lease.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {otherIncomeRows.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
-                      <TableCell>{tenantName(r.tenantId)}</TableCell>
-                      <TableCell>
-                        {fmtDate(r.startDate)} → {fmtDate(r.endDate)}
-                        {r.endedAt ? (
-                          <span className="block text-xs text-muted-foreground">
-                            Ended {fmtDate(r.endedAt)} · {r.status}
-                          </span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-right">{currency(r.penalty)}</TableCell>
-                      <TableCell className="text-right">{currency(r.otherIncome)}</TableCell>
-                      <TableCell className="text-right font-medium">{currency(r.total)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {otherIncomeRows.length > 0 && (
-                    <TableRow className="bg-muted/40 font-semibold">
-                      <TableCell colSpan={3}>TOTAL</TableCell>
-                      <TableCell className="text-right">
-                        {currency(otherIncomeTotals.penalty)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {currency(otherIncomeTotals.otherIncome)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {currency(otherIncomeTotals.total)}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          .print-only { display: block !important; }
-          header, nav, aside { display: none !important; }
-          body { background: white; }
-        }
-      `}</style>
-    </AppShell>
-  );
-}
