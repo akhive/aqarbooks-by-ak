@@ -35,6 +35,8 @@ export type Contract = {
   endedAt?: string;
   deletedAt?: string;
   depositAmount: number;
+  penalty?: number;
+  extraCharges?: number;
 };
 
 export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
@@ -121,6 +123,8 @@ const mapContract = (r: any): Contract => ({
   endedAt: r.ended_at || "",
   deletedAt: r.deleted_at || "",
   depositAmount: Number(r.deposit_amount) || 0,
+  penalty: Number(r.penalty) || 0,
+  extraCharges: Number(r.extra_charges) || 0,
 });
 
 const mapCheque = (r: any): Cheque => ({
@@ -145,7 +149,6 @@ const mapExpense = (r: any): Expense => ({
   amount: Number(r.amount) || 0,
 });
 
-/** Calculate Current Year Revenue + Deferred Revenue */
 export function calcRevenue(startDate: string, endDate: string, rent: number) {
   if (!startDate || !endDate || !rent) return { currentYear: 0, deferred: 0 };
 
@@ -287,6 +290,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             notes: c.notes || null,
             ended_at: c.endedAt || null,
             deposit_amount: c.depositAmount || 0,
+            penalty: c.penalty || 0,
+            extra_charges: c.extraCharges || 0,
           })
           .select()
           .single();
@@ -310,6 +315,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             notes: c.notes || null,
             ended_at: c.endedAt || null,
             deposit_amount: c.depositAmount || 0,
+            penalty: c.penalty || 0,
+            extra_charges: c.extraCharges || 0,
           })
           .eq("id", id);
         if (error) throw error;
