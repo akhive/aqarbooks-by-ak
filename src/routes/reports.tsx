@@ -269,6 +269,43 @@ function ReportsPage() {
 
   const depositTotal = depositRows.reduce((s, r) => s + r.depositAmount, 0);
 
+  const otherIncomeRows = useMemo(() => {
+    return data.contracts
+      .filter((c) => {
+        const p = c.penalty || 0;
+        const e = c.extraCharges || 0;
+        if (p <= 0 && e <= 0) return false;
+        if (from && c.endedAt && c.endedAt < from) return false;
+        if (to && c.endedAt && c.endedAt > to) return false;
+        if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
+        return true;
+      })
+      .map((c) => {
+        const penalty = c.penalty || 0;
+        const otherIncome = c.extraCharges || 0;
+        return {
+          ...c,
+          penalty,
+          otherIncome,
+          total: penalty + otherIncome,
+        };
+      })
+      .sort((a, b) => (b.endedAt || b.endDate || "").localeCompare(a.endedAt || a.endDate || ""));
+  }, [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch]);
+
+  const otherIncomeTotals = useMemo(
+    () =>
+      otherIncomeRows.reduce(
+        (acc, r) => ({
+          penalty: acc.penalty + r.penalty,
+          otherIncome: acc.otherIncome + r.otherIncome,
+          total: acc.total + r.total,
+        }),
+        { penalty: 0, otherIncome: 0, total: 0 },
+      ),
+    [otherIncomeRows],
+  );
+
   return (
     <AppShell>
       <div className="print-only mb-6 hidden border-b pb-4 print:block">
@@ -279,7 +316,7 @@ function ReportsPage() {
           <div>
             <h1 className="text-xl font-bold">Report</h1>
             <p className="text-sm text-muted-foreground">Period: {periodLabel}</p>
-            <p className="text-xs text-muted-foreground">Aqar Books </p>
+            <p className="text-xs text-muted-foreground">Aqar Books — Built by AK</p>
           </div>
         </div>
       </div>
@@ -343,6 +380,7 @@ function ReportsPage() {
           <TabsTrigger value="renewal">Contract renewals</TabsTrigger>
           <TabsTrigger value="vacant">Vacant units</TabsTrigger>
           <TabsTrigger value="deposit">Deposits</TabsTrigger>
+          <TabsTrigger value="other-income">Other incomes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="lease">
@@ -773,6 +811,92 @@ function ReportsPage() {
                     <TableRow className="bg-muted/40 font-semibold">
                       <TableCell colSpan={7}>TOTAL</TableCell>
                       <TableCell className="text-right">{currency(depositTotal)}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Other incomes — penalty + extra charges */}
+        <TabsContent value="other-income">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">Other incomes</CardTitle>
+                <CardDescription>
+                  Penalty &amp; extra charges from break / cancel · {otherIncomeRows.length}{" "}
+                  lease(s)
+                </CardDescription>
+              </div>
+              <ReportActions
+                onExport={() =>
+                  exportCSV(
+                    `other_incomes.csv`,
+                    ["Lease No", "Tenant", "Period", "Penalty", "Other income", "Total"],
+                    otherIncomeRows.map((r) => [
+                      r.leaseNo,
+                      tenantName(r.tenantId),
+                      `${r.startDate} → ${r.endDate}`,
+                      r.penalty,
+                      r.otherIncome,
+                      r.total,
+                    ]),
+                  )
+                }
+              />
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lease No</TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead className="text-right">Penalty</TableHead>
+                    <TableHead className="text-right">Other income</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {otherIncomeRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                        No penalty / extra charges yet. Enter them when breaking or cancelling a
+                        lease.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {otherIncomeRows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
+                      <TableCell>{tenantName(r.tenantId)}</TableCell>
+                      <TableCell>
+                        {fmtDate(r.startDate)} → {fmtDate(r.endDate)}
+                        {r.endedAt ? (
+                          <span className="block text-xs text-muted-foreground">
+                            Ended {fmtDate(r.endedAt)} · {r.status}
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-right">{currency(r.penalty)}</TableCell>
+                      <TableCell className="text-right">{currency(r.otherIncome)}</TableCell>
+                      <TableCell className="text-right font-medium">{currency(r.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {otherIncomeRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={3}>TOTAL</TableCell>
+                      <TableCell className="text-right">
+                        {currency(otherIncomeTotals.penalty)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {currency(otherIncomeTotals.otherIncome)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {currency(otherIncomeTotals.total)}
+                      </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
