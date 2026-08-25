@@ -19,22 +19,24 @@ export const Route = createFileRoute("/reports")({
 
 function splitByYear(startDate: string, endDate: string, rent: number) {
   if (!startDate || !endDate || !rent) return {} as Record<number, number>;
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const daily = rent / 365;
+  const start = new Date(startDate + "T12:00:00");
+  const end = new Date(endDate + "T12:00:00");
+  if (end < start) return {};
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (totalDays <= 0) return {};
+  const daily = rent / totalDays;
   const result: Record<number, number> = {};
   for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
-    const yStart = new Date(y, 0, 1);
-    const yEnd = new Date(y, 11, 31);
+    const yStart = new Date(y, 0, 1, 12, 0, 0);
+    const yEnd = new Date(y, 11, 31, 12, 0, 0);
     const from = start > yStart ? start : yStart;
     const to = end < yEnd ? end : yEnd;
     if (to < from) continue;
-    const days = Math.ceil((to.getTime() - from.getTime()) / 86400000) + 1;
+    const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
     result[y] = Math.round(daily * days);
   }
   return result;
 }
-
 function effectiveRent(c: { rent: number; actualRent?: number }) {
   return c.actualRent && c.actualRent > 0 ? c.actualRent : c.rent;
 }
