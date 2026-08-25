@@ -156,23 +156,33 @@ export function calcRevenue(startDate: string, endDate: string, rent: number) {
 
   const start = new Date(startDate + "T12:00:00");
   const end = new Date(endDate + "T12:00:00");
-  const year = new Date().getFullYear();
+  if (end < start) return { currentYear: 0, deferred: 0 };
 
+  const year = new Date().getFullYear();
   const yearStart = new Date(year, 0, 1, 12, 0, 0);
   const yearEnd = new Date(year, 11, 31, 12, 0, 0);
 
-  const daily = rent / 365;
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (totalDays <= 0) return { currentYear: 0, deferred: 0 };
 
-  const currentStart = start > yearStart ? start : yearStart;
-  const currentEnd = end < yearEnd ? end : yearEnd;
+  // Use rent ÷ totalDays so full lease sums to rent (not always 365)
+  const daily = rent / totalDays;
+
+  const curFrom = start > yearStart ? start : yearStart;
+  const curTo = end < yearEnd ? end : yearEnd;
 
   let currentDays = 0;
-  if (currentEnd >= currentStart) {
-    currentDays = Math.round((currentEnd.getTime() - currentStart.getTime()) / 86400000) + 1;
+  if (curTo >= curFrom) {
+    currentDays = Math.round((curTo.getTime() - curFrom.getTime()) / 86400000) + 1;
   }
 
-  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-  const deferredDays = Math.max(0, totalDays - currentDays);
+  // Deferred = portion strictly after this calendar year
+  const afterYearStart = new Date(year + 1, 0, 1, 12, 0, 0);
+  let deferredDays = 0;
+  if (end >= afterYearStart) {
+    const defFrom = start > afterYearStart ? start : afterYearStart;
+    deferredDays = Math.round((end.getTime() - defFrom.getTime()) / 86400000) + 1;
+  }
 
   return {
     currentYear: Math.round(daily * currentDays),
