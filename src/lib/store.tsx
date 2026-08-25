@@ -40,7 +40,7 @@ export type Contract = {
   actualRent?: number;
 };
 
-export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced";
+export type ChequeStatus = "PDC" | "Deposited" | "Cleared" | "Bounced" | "Returned";
 
 export type Cheque = {
   id: string;
@@ -396,11 +396,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       deleteCheque: async (id) => {
-        const { error } = await supabase.from("cheques").delete().eq("id", id);
-        if (error) throw error;
-        setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
-      },
-
+  const ch = data.cheques.find((x) => x.id === id);
+  if (ch?.contractId) {
+    const c = data.contracts.find((x) => x.id === ch.contractId);
+    if (c && (c.status || "Active") === "Active") {
+      throw new Error("Cannot delete PDC on an Active contract. Mark as Returned instead.");
+    }
+  }
+  const { error } = await supabase.from("cheques").delete().eq("id", id);
+  if (error) throw error;
+  setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
+},
       addExpense: async (e) => {
         const { data: row, error } = await supabase
           .from("expenses")
