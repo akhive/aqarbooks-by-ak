@@ -191,6 +191,45 @@ function ContractDetailPage() {
     setBalance(used + penalty + extra - received - depositRefund);
   }, [contract, actionOpen, breakDate, penalty, extra, depositRefund, rentCheques]);
 
+  // Revenue / deferred / leased days
+  const rentBreakdown = useMemo(() => {
+    if (!contract) return { leasedDays: 0, revenue: 0, deferred: 0, rentAmt: 0 };
+    const rentAmt =
+      contract.actualRent && contract.actualRent > 0 ? contract.actualRent : contract.rent;
+    const endDt =
+      (contract.status === "Broken" ||
+        contract.status === "Cancelled" ||
+        contract.status === "Ended") &&
+      contract.endedAt
+        ? contract.endedAt
+        : contract.endDate;
+
+    const start = new Date(contract.startDate + "T12:00:00");
+    const end = new Date(endDt + "T12:00:00");
+    const leasedDays =
+      end >= start ? Math.round((end.getTime() - start.getTime()) / 86400000) + 1 : 0;
+    const daily = leasedDays > 0 ? rentAmt / leasedDays : 0;
+    const thisYear = new Date().getFullYear();
+    let revenue = 0;
+    let deferred = 0;
+
+    if (leasedDays > 0) {
+      for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
+        const yStart = new Date(y, 0, 1, 12, 0, 0);
+        const yEnd = new Date(y, 11, 31, 12, 0, 0);
+        const from = start > yStart ? start : yStart;
+        const to = end < yEnd ? end : yEnd;
+        if (to < from) continue;
+        const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+        const amt = Math.round(daily * days);
+        if (y === thisYear) revenue += amt;
+        else deferred += amt;
+      }
+    }
+
+    return { leasedDays, revenue, deferred, rentAmt };
+  }, [contract]);
+
   if (loading) {
     return (
       <AppShell>
@@ -440,62 +479,63 @@ function ContractDetailPage() {
               <TableHead className="text-right">Amount</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Cleared</TableHead>
-              <TableHead className="w-20"></TableHead>
+              <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 && (
+            {rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   No cheques yet. Use Split on this lease card.
                 </TableCell>
               </TableRow>
-            )}
-            {rows.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>{fmtDate(c.chequeDate)}</TableCell>
-                <TableCell>{c.chequeNo || "—"}</TableCell>
-                <TableCell>{c.bank || "—"}</TableCell>
-                <TableCell className="text-right">{currency(c.amount)}</TableCell>
-                <TableCell>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      c.status === "Cleared"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : c.status === "Bounced"
-                          ? "bg-red-100 text-red-800"
-                          : c.status === "Returned"
-                            ? "bg-violet-100 text-violet-800"
-                            : "bg-slate-100 text-slate-700"
-                    }`}
-                  >
-                    {c.status === "Returned" ? "Returned" : c.status}
-                  </span>
-                </TableCell>
-                <TableCell>{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => {
-                        setEditCheque(c);
-                        setChequeDate(c.chequeDate || "");
-                        setChequeNo(c.chequeNo || "");
-                        setChequeBank(c.bank || "");
-                        setChequeAmount(c.amount || 0);
-                        setChequeStatus((c.status as ChequeStatus) || "PDC");
-                      }}
+            ) : (
+              rows.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
+                  <TableCell>{c.chequeNo || "—"}</TableCell>
+                  <TableCell>{c.bank || "—"}</TableCell>
+                  <TableCell className="text-right">{currency(c.amount)}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        c.status === "Cleared"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : c.status === "Bounced"
+                            ? "bg-red-100 text-red-800"
+                            : c.status === "Returned"
+                              ? "bg-violet-100 text-violet-800"
+                              : "bg-slate-100 text-slate-700"
+                      }`}
                     >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={() => removeCheque(c.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      {c.status === "Returned" ? "Returned" : c.status}
+                    </span>
+                  </TableCell>
+                  <TableCell>{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditCheque(c);
+                          setChequeDate(c.chequeDate || "");
+                          setChequeNo(c.chequeNo || "");
+                          setChequeBank(c.bank || "");
+                          setChequeAmount(c.amount || 0);
+                          setChequeStatus((c.status as ChequeStatus) || "PDC");
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => removeCheque(c.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </CardContent>
@@ -687,126 +727,33 @@ function ContractDetailPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Email</span>
                 <span>{tenant?.email || "—"}</span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Unit</span>
                 <span className="font-medium">{unit?.flatNo || "—"}</span>
               </div>
-
-              {(() => {
-                const rentAmt =
-                  contract.actualRent && contract.actualRent > 0
-                    ? contract.actualRent
-                    : contract.rent;
-                const endDt =
-                  (contract.status === "Broken" ||
-                    contract.status === "Cancelled" ||
-                    contract.status === "Ended") &&
-                  contract.endedAt
-                    ? contract.endedAt
-                    : contract.endDate;
-
-                const start = new Date(contract.startDate + "T12:00:00");
-                const end = new Date(endDt + "T12:00:00");
-                const leasedDays =
-                  end >= start
-                    ? Math.round((end.getTime() - start.getTime()) / 86400000) + 1
-                    : 0;
-                const daily = leasedDays > 0 ? rentAmt / leasedDays : 0;
-
-                const thisYear = new Date().getFullYear();
-                let revenue = 0;
-                let deferred = 0;
-
-                if (leasedDays > 0) {
-                  for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
-                    const yStart = new Date(y, 0, 1, 12, 0, 0);
-                    const yEnd = new Date(y, 11, 31, 12, 0, 0);
-                    const from = start > yStart ? start : yStart;
-                    const to = end < yEnd ? end : yEnd;
-                    if (to < from) continue;
-                    const days =
-                      Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
-                    const amt = Math.round(daily * days);
-                    if (y === thisYear) revenue += amt;
-                    else deferred += amt;
-                  }
-                }
-
-                return (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Leased days</span>
-                      <span className="font-medium">{leasedDays}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Revenue / Deferred</span>
-                      <span>
-                        {currency(revenue)} / {currency(deferred)}
-                      </span>
-                    </div>
-                  </>
-                );
-              })()}
-
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Actual rent</span>
+                <span className="text-muted-foreground">Leased days</span>
+                <span className="font-medium">{rentBreakdown.leasedDays}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Revenue / Deferred</span>
                 <span>
-                  {currency(
-                    contract.actualRent && contract.actualRent > 0
-                      ? contract.actualRent
-                      : contract.rent,
-                  )}
+                  {currency(rentBreakdown.revenue)} / {currency(rentBreakdown.deferred)}
                 </span>
               </div>
-
-                    <div className="space-y-0.5 border-l-2 border-muted pl-2 text-xs text-muted-foreground">
-                      {parts.map((p) => (
-                        <div key={p.year} className="flex justify-between">
-                          <span>
-                            Year {p.year}
-                            {p.year < thisYear
-                              ? " (prior)"
-                              : p.year > thisYear
-                                ? " (deferred)"
-                                : " (this year)"}
-                          </span>
-                          <span>{currency(p.amount)}</span>
-                        </div>
-                      ))}
-                      {priorYears > 0 && (
-                        <div className="flex justify-between">
-                          <span>Prior years total</span>
-                          <span>{currency(priorYears)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between font-medium text-foreground">
-                        <span>Total rent used</span>
-                        <span>{currency(rentAmt)}</span>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Actual rent</span>
-                <span>
-                  {currency(
-                    contract.actualRent && contract.actualRent > 0
-                      ? contract.actualRent
-                      : contract.rent,
-                  )}
-                </span>
+                <span>{currency(rentBreakdown.rentAmt)}</span>
               </div>
-
-              {(contract.penalty || 0) > 0 || (contract.extraCharges || 0) > 0 ? (
+              {((contract.penalty || 0) > 0 || (contract.extraCharges || 0) > 0) && (
                 <div className="flex justify-between border-t pt-2">
                   <span className="text-muted-foreground">Penalty / Extra</span>
                   <span>
                     {currency(contract.penalty || 0)} / {currency(contract.extraCharges || 0)}
                   </span>
                 </div>
-              ) : null}
+              )}
             </CardContent>
           </Card>
 
@@ -876,7 +823,7 @@ function ContractDetailPage() {
             </div>
             <div className="rounded-md bg-muted p-3 text-sm">
               {previewDates.map((d, i) => (
-                <div key={d}>
+                <div key={`${d}-${i}`}>
                   {i + 1}. {fmtDate(d)}
                 </div>
               ))}
