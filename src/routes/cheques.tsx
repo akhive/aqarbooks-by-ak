@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ const empty: Form = {
 };
 
 function ChequesPage() {
-  const { data, addCheque, updateCheque, deleteCheque } = useStore();
+  const { data, updateCheque, deleteCheque } = useStore();
   const [tenantSearch, setTenantSearch] = useState("");
   const [flatSearch, setFlatSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -67,6 +67,11 @@ function ChequesPage() {
     return data.units.find((u) => u.id === contract.unitId)?.flatNo || "—";
   };
 
+  const leaseNoFor = (cheque: { contractId?: string }) => {
+    if (!cheque.contractId) return "—";
+    return data.contracts.find((c) => c.id === cheque.contractId)?.leaseNo || "—";
+  };
+
   const filtered = useMemo(() => {
     const tq = tenantSearch.trim().toLowerCase();
     const fq = flatSearch.trim().toLowerCase();
@@ -78,13 +83,6 @@ function ChequesPage() {
       })
       .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
   }, [data.cheques, data.tenants, data.contracts, data.units, tenantSearch, flatSearch]);
-
-  const startAdd = () => {
-    setEditing(null);
-    setForm(empty);
-    setError("");
-    setOpen(true);
-  };
 
   const startEdit = (c: Cheque) => {
     setEditing(c.id);
@@ -100,7 +98,6 @@ function ChequesPage() {
     if (!form.chequeDate) return setError("Cheque date required");
     if (form.amount <= 0) return setError("Amount must be greater than zero");
 
-    // If clearance date filled → force Cleared
     const payload: Form = {
       ...form,
       status: form.clearedDate ? "Cleared" : form.status,
@@ -111,9 +108,6 @@ function ChequesPage() {
       if (editing) {
         await updateCheque(editing, payload);
         toast.success("Cheque updated");
-      } else {
-        await addCheque(payload);
-        toast.success("Cheque added");
       }
       setOpen(false);
     } catch (err: any) {
@@ -121,10 +115,16 @@ function ChequesPage() {
     }
   };
 
-  const remove = async (id: string) => {
+  const remove = async (c: Cheque) => {
+    if (c.contractId) {
+      toast.error(
+        "This PDC is linked to a contract. Open the lease card to manage it (or mark as Returned).",
+      );
+      return;
+    }
     if (!confirm("Delete this cheque?")) return;
     try {
-      await deleteCheque(id);
+      await deleteCheque(c.id);
       toast.success("Deleted");
     } catch (err: any) {
       toast.error(err.message || "Failed");
@@ -135,13 +135,7 @@ function ChequesPage() {
     <AppShell>
       <PageHeader
         title="Cheques (PDC)"
-        description={`${filtered.length} cheque(s)`}
-        action={
-          <Button onClick={startAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add cheque
-          </Button>
-        }
+        description={`${filtered.length} cheque(s) · Linked PDCs cannot be deleted here — use the lease card`}
       />
 
       <Card className="mb-4">
@@ -184,58 +178,85 @@ function ChequesPage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Tenant</TableHead>
                 <TableHead>Flat</TableHead>
+                <TableHead>Lease</TableHead>
                 <TableHead>Cheque no.</TableHead>
                 <TableHead>Bank</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Cleared</TableHead>
                 <TableHead>Kind</TableHead>
-                <TableHead className="w-24"></TableHead>
+                <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
                     No cheques found.
                   </TableCell>
                 </TableRow>
               )}
-              {filtered.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
-                  <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
-                  <TableCell>{flatNoFor(c)}</TableCell>
-                  <TableCell>{c.chequeNo || "—"}</TableCell>
-                  <TableCell>{c.bank || "—"}</TableCell>
-                  <TableCell className="text-right">{currency(c.amount)}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        c.status === "Cleared"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : c.status === "Bounced"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-slate-100 text-slate-700"
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                  </TableCell>
-                  <TableCell>{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</TableCell>
-                  <TableCell>{c.kind || "rent"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={() => remove(c.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filtered.map((c) => {
+                const linked = Boolean(c.contractId);
+                return (
+                  <TableRow key={c.id}>
+                    <TableCell>{fmtDate(c.chequeDate)}</TableCell>
+                    <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
+                    <TableCell>{flatNoFor(c)}</TableCell>
+                    <TableCell>
+                      {linked ? (
+                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
+                          {leaseNoFor(c)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>{c.chequeNo || "—"}</TableCell>
+                    <TableCell>{c.bank || "—"}</TableCell>
+                    <TableCell className="text-right">{currency(c.amount)}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          c.status === "Cleared"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : c.status === "Bounced"
+                              ? "bg-red-100 text-red-800"
+                              : c.status === "Returned"
+                                ? "bg-violet-100 text-violet-800"
+                                : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {c.status === "Returned" ? "Returned" : c.status}
+                      </span>
+                    </TableCell>
+                    <TableCell>{c.clearedDate ? fmtDate(c.clearedDate) : "—"}</TableCell>
+                    <TableCell>{c.kind || "rent"}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          disabled={linked}
+                          title={
+                            linked
+                              ? "Linked to contract — manage from lease card"
+                              : "Delete"
+                          }
+                          onClick={() => remove(c)}
+                        >
+                          <Trash2
+                            className={`h-4 w-4 ${linked ? "opacity-30" : "text-destructive"}`}
+                          />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -244,7 +265,7 @@ function ChequesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit cheque" : "Add cheque"}</DialogTitle>
+            <DialogTitle>Edit cheque</DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3">
             <div>
@@ -319,7 +340,7 @@ function ChequesPage() {
                   setForm({
                     ...form,
                     clearedDate: e.target.value,
-                    status: e.target.value ? "Cleared" : "PDC",
+                    status: e.target.value ? "Cleared" : form.status,
                   })
                 }
               />
@@ -338,15 +359,22 @@ function ChequesPage() {
                   <SelectItem value="Deposited">Deposited</SelectItem>
                   <SelectItem value="Cleared">Cleared</SelectItem>
                   <SelectItem value="Bounced">Bounced</SelectItem>
+                  <SelectItem value="Returned">Returned to tenant</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {form.contractId && (
+              <p className="text-xs text-muted-foreground">
+                Linked to a contract — delete is blocked on this tab. Use the lease card or mark
+                Returned.
+              </p>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editing ? "Save" : "Add"}</Button>
+              <Button type="submit">Save</Button>
             </DialogFooter>
           </form>
         </DialogContent>
