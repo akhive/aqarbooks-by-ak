@@ -49,7 +49,6 @@ function effectiveEnd(c: { endDate: string; endedAt?: string; status?: string })
   return c.endDate;
 }
 
-/** Accrue rent into calendar year using rent ÷ lease-days */
 function rentInYear(startDate: string, endDate: string, rent: number, y: number) {
   if (!startDate || !endDate || !rent) return 0;
   const start = new Date(startDate + "T12:00:00");
@@ -114,26 +113,21 @@ function Dashboard() {
   const year = new Date().getFullYear();
   const today = new Date().toISOString().slice(0, 10);
 
-  /**
-   * Income (accrual) = this year rent share only (incl. prior deferred into this year)
-   * NO penalty / other income
-   * Net profit = income − expenses
-   */
+ 
   const { income, expense, monthly, otherIncome } = useMemo(() => {
     const monthly = MONTHS.map((m) => ({ month: m, income: 0, expense: 0, profit: 0 }));
-    let income = 0;       // rent only (for Income card)
-    let otherIncome = 0;  // penalty + extra this year
+    let income = 0;
+    let otherIncome = 0;
     let expense = 0;
 
     data.contracts.forEach((c) => {
       if ((c.status || "Active") === "Draft") return;
 
-      const r = effectiveRent(c); // actual if set, else contract rent — for accrual income
+      const r = effectiveRent(c);
       const end = effectiveEnd(c);
       const yearAmt = rentInYear(c.startDate, end, r, year);
       income += yearAmt;
 
-      // monthly chart based on rent accrual
       if (yearAmt > 0 && c.startDate && end) {
         const start = new Date(c.startDate + "T12:00:00");
         const endD = new Date(end + "T12:00:00");
@@ -151,14 +145,12 @@ function Dashboard() {
         }
       }
 
-      // penalty + extra in year lease ended (for Net profit only)
       const pen = (c.penalty || 0) + (c.extraCharges || 0);
       if (pen > 0) {
         const endIso = c.endedAt || c.endDate;
         if (endIso && new Date(endIso).getFullYear() === year) {
           otherIncome += pen;
-          const m = new Date(endIso).getMonth();
-          monthly[m]!.income += pen; // include in profit trend
+          monthly[new Date(endIso).getMonth()]!.income += pen;
         }
       }
     });
@@ -172,11 +164,13 @@ function Dashboard() {
     });
 
     monthly.forEach((m) => {
-      m.profit = m.income - m.expense; // rent + other − expense per month
+      m.profit = m.income - m.expense;
     });
 
     return { income, expense, monthly, otherIncome };
   }, [data, year]);
+
+  const profit = income + otherIncome - expense;
 
   const { occupiedCount, vacant, totalUnits } = useMemo(() => {
     const occupiedUnitIds = new Set<string>();
@@ -196,36 +190,27 @@ function Dashboard() {
     };
   }, [data.contracts, data.units, today]);
 
-  /**
-   * Average Yearly Rental = avg of this-year rent shares
-   * Hike % = (totalThis − totalPrev) / totalPrev × 100
-   */
-  const { avgRent, hikePct } = useMemo(() => {
+
+  const { yoyChange, hikePct, totalThis, totalPrev } = useMemo(() => {
     let totalThis = 0;
     let totalPrev = 0;
-    let countThis = 0;
 
     data.contracts.forEach((c) => {
       if ((c.status || "Active") === "Draft") return;
-      const r = c.rent; // contract rent only — not actualRent
+      const r = c.rent; // contract rent only
       const end = effectiveEnd(c);
-
-      const amtThis = rentInYear(c.startDate, end, r, year);
-      if (amtThis > 0) {
-        totalThis += amtThis;
-        countThis += 1;
-      }
+      totalThis += rentInYear(c.startDate, end, r, year);
       totalPrev += rentInYear(c.startDate, end, r, year - 1);
     });
 
-    const avgRent = countThis > 0 ? Math.round(totalThis / countThis) : 0;
+    const yoyChange = totalThis - totalPrev;
 
     let hikePct: number | null = null;
     if (totalPrev > 0) {
       hikePct = Math.round(((totalThis - totalPrev) / totalPrev) * 1000) / 10;
     }
 
-    return { avgRent, hikePct };
+    return { yoyChange, hikePct, totalThis, totalPrev };
   }, [data.contracts, year]);
 
   const pieData = useMemo(() => {
@@ -273,14 +258,12 @@ function Dashboard() {
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "Unknown";
 
-  const hikeHint =
+  const rentalHint =
     hikePct == null
-      ? "No previous-year total"
+      ? `${year - 1}: ${currency(totalPrev)} · ${year}: ${currency(totalThis)}`
       : hikePct >= 0
-        ? `${hikePct}% ⬆️ vs ${year - 1} total`
-        : `${Math.abs(hikePct)}% ⬇️ vs ${year - 1} total`;
-
-  const profit = income - expense;
+        ? `${hikePct}% ⬆️ · ${year - 1} ${currency(totalPrev)} → ${year} ${currency(totalThis)}`
+        : `${Math.abs(hikePct)}% ⬇️ · ${year - 1} ${currency(totalPrev)} → ${year} ${currency(totalThis)}`;
 
   return (
     <AppShell>
@@ -315,10 +298,10 @@ function Dashboard() {
         />
         <Stat
           label="Average Yearly Rental (AED)"
-          value={currency(avgRent)}
-          hint={hikeHint}
+          value={currency(yoyChange)}
+          hint={rentalHint}
           icon={TrendingUp}
-          tone={hikePct == null ? "default" : hikePct >= 0 ? "positive" : "negative"}
+          tone={yoyChange >= 0 ? "positive" : "negative"}
         />
       </div>
 
