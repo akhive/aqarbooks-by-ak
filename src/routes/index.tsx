@@ -265,9 +265,10 @@ function Dashboard() {
 
   const rentalHint =
     hikePct == null
-      ? `${year - 1}: ${currency(totalPrev)} · ${year}: ${currency(totalThis)}`
+      ? "No previous-year income"
       : hikePct >= 0
-        ? `${hikePct}% ⬆️ · ${year - 1} ${currency(totalPrev)} → ${year} ${currency(totalThis)}`
+        ? `${hikePct}% ⬆️ vs ${year - 1}`
+        : `${Math.abs(hikePct)}% ⬇️ vs ${year - 1}`;
 
   return (
     <AppShell>
