@@ -177,23 +177,37 @@ function Dashboard() {
     return rows;
   }, [data.cheques, data.contracts, data.expenses, year]);
 
-  const { occupiedCount, vacant, totalUnits } = useMemo(() => {
-    const occupiedUnitIds = new Set<string>();
-    data.contracts.forEach((c) => {
-      if ((c.status || "Active") === "Draft") return;
-      if ((c.status || "Active") !== "Active") return;
-      if (!c.unitId) return;
-      if (c.startDate && c.startDate > today) return;
-      if (c.endDate && c.endDate < today) return;
-      occupiedUnitIds.add(c.unitId);
+  const { occupiedCount, vacant, totalUnits, activeLeaseCount, missingUnit } = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const activeLeases = data.contracts.filter((c) => {
+      const status = (c.status || "Active").trim();
+      if (status === "Draft") return false;
+      if (status !== "Active") return false;
+      if (c.startDate && c.startDate > todayStr) return false;
+      // still within original end (and not past break if endedAt set by mistake on Active)
+      const end = c.endedAt && c.endedAt < (c.endDate || c.endedAt) ? c.endedAt : c.endDate;
+      if (end && end < todayStr) return false;
+      return true;
     });
+
+    const occupiedUnitIds = new Set<string>();
+    let missingUnit = 0;
+    activeLeases.forEach((c) => {
+      if (c.unitId) occupiedUnitIds.add(c.unitId);
+      else missingUnit += 1;
+    });
+
     const vacant = data.units.filter((u) => !occupiedUnitIds.has(u.id));
+
     return {
       occupiedCount: occupiedUnitIds.size,
       vacant,
       totalUnits: data.units.length,
+      activeLeaseCount: activeLeases.length,
+      missingUnit,
     };
-  }, [data.contracts, data.units, today]);
+  }, [data.contracts, data.units]);
 
   /** Avg yearly rental card = Income(Y) − Income(Y-1), % of prior income */
   const yoyChange = income - incomePrev;
