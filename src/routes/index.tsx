@@ -119,19 +119,21 @@ function Dashboard() {
    * NO penalty / other income
    * Net profit = income − expenses
    */
-  const { income, expense, monthly } = useMemo(() => {
+  const { income, expense, monthly, otherIncome } = useMemo(() => {
     const monthly = MONTHS.map((m) => ({ month: m, income: 0, expense: 0, profit: 0 }));
-    let income = 0;
+    let income = 0;       // rent only (for Income card)
+    let otherIncome = 0;  // penalty + extra this year
     let expense = 0;
 
     data.contracts.forEach((c) => {
       if ((c.status || "Active") === "Draft") return;
 
-      const r = effectiveRent(c);
+      const r = effectiveRent(c); // actual if set, else contract rent — for accrual income
       const end = effectiveEnd(c);
       const yearAmt = rentInYear(c.startDate, end, r, year);
       income += yearAmt;
 
+      // monthly chart based on rent accrual
       if (yearAmt > 0 && c.startDate && end) {
         const start = new Date(c.startDate + "T12:00:00");
         const endD = new Date(end + "T12:00:00");
@@ -148,6 +150,17 @@ function Dashboard() {
           }
         }
       }
+
+      // penalty + extra in year lease ended (for Net profit only)
+      const pen = (c.penalty || 0) + (c.extraCharges || 0);
+      if (pen > 0) {
+        const endIso = c.endedAt || c.endDate;
+        if (endIso && new Date(endIso).getFullYear() === year) {
+          otherIncome += pen;
+          const m = new Date(endIso).getMonth();
+          monthly[m]!.income += pen; // include in profit trend
+        }
+      }
     });
 
     data.expenses.forEach((e) => {
@@ -159,10 +172,10 @@ function Dashboard() {
     });
 
     monthly.forEach((m) => {
-      m.profit = m.income - m.expense;
+      m.profit = m.income - m.expense; // rent + other − expense per month
     });
 
-    return { income, expense, monthly };
+    return { income, expense, monthly, otherIncome };
   }, [data, year]);
 
   const { occupiedCount, vacant, totalUnits } = useMemo(() => {
@@ -194,7 +207,7 @@ function Dashboard() {
 
     data.contracts.forEach((c) => {
       if ((c.status || "Active") === "Draft") return;
-      const r = effectiveRent(c);
+      const r = c.rent; // contract rent only — not actualRent
       const end = effectiveEnd(c);
 
       const amtThis = rentInYear(c.startDate, end, r, year);
@@ -285,7 +298,11 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint="Rent income − expenses"
+          hint={
+            otherIncome > 0
+              ? `Rent + penalty/extra ${currency(otherIncome)} − expenses`
+              : "This-year rent + penalty/extra − expenses"
+          }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
         />
