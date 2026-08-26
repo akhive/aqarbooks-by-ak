@@ -408,10 +408,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteCheque: async (id) => {
   const ch = data.cheques.find((x) => x.id === id);
   if (ch?.contractId) {
-    const c = data.contracts.find((x) => x.id === ch.contractId);
-    if (c && (c.status || "Active") === "Active") {
-      throw new Error("Cannot delete PDC on an Active contract. Mark as Returned instead.");
-    }
+    throw new Error(
+      "This PDC is linked to a contract. Open the lease card to manage it (or mark as Returned).",
+    );
   }
   const { error } = await supabase.from("cheques").delete().eq("id", id);
   if (error) throw error;
