@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  calcRevenue,
   currency,
   fmtDate,
   useStore,
@@ -170,7 +169,6 @@ function ContractDetailPage() {
   const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
 
-  // Renew dialog
   const [renewOpen, setRenewOpen] = useState(false);
   const [renewRent, setRenewRent] = useState(0);
   const [renewDeposit, setRenewDeposit] = useState(0);
@@ -211,19 +209,6 @@ function ContractDetailPage() {
       </AppShell>
     );
   }
-
-  const rentForRevenue =
-    contract.actualRent && contract.actualRent > 0 ? contract.actualRent : contract.rent;
-
-  const endForRevenue =
-    (contract.status === "Broken" ||
-      contract.status === "Cancelled" ||
-      contract.status === "Ended") &&
-    contract.endedAt
-      ? contract.endedAt
-      : contract.endDate;
-
-  const rev = calcRevenue(contract.startDate, endForRevenue, rentForRevenue);
 
   const rentTotal = rentCheques.reduce((s, c) => s + c.amount, 0);
   const depTotal = depositCheques.reduce((s, c) => s + c.amount, 0);
@@ -499,7 +484,7 @@ function ContractDetailPage() {
                         setChequeNo(c.chequeNo || "");
                         setChequeBank(c.bank || "");
                         setChequeAmount(c.amount || 0);
-                        setChequeStatus(c.status || "PDC");
+                        setChequeStatus((c.status as ChequeStatus) || "PDC");
                       }}
                     >
                       <Pencil className="h-4 w-4" />
@@ -613,9 +598,7 @@ function ContractDetailPage() {
           description={`${tenant?.name || "—"} · Unit ${unit?.flatNo || "—"}`}
           action={
             <div className="flex flex-wrap gap-2">
-              {isDraft && (
-                <Button onClick={submitContract}>Submit contract</Button>
-              )}
+              {isDraft && <Button onClick={submitContract}>Submit contract</Button>}
               <Button variant="outline" onClick={() => openSplit("rent")}>
                 <Plus className="mr-2 h-4 w-4" />
                 Split rent PDCs
@@ -709,12 +692,106 @@ function ContractDetailPage() {
                 <span className="text-muted-foreground">Unit</span>
                 <span className="font-medium">{unit?.flatNo || "—"}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Revenue / Deferred</span>
-                <span>
-                  {currency(rev.currentYear)} / {currency(rev.deferred)}
-                </span>
-              </div>
+
+              {/* Leased days + year-by-year revenue */}
+              {(() => {
+                const rentAmt =
+                  contract.actualRent && contract.actualRent > 0
+                    ? contract.actualRent
+                    : contract.rent;
+                const endDt =
+                  (contract.status === "Broken" ||
+                    contract.status === "Cancelled" ||
+                    contract.status === "Ended") &&
+                  contract.endedAt
+                    ? contract.endedAt
+                    : contract.endDate;
+
+                const start = new Date(contract.startDate + "T12:00:00");
+                const end = new Date(endDt + "T12:00:00");
+                const leasedDays =
+                  end >= start
+                    ? Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+                    : 0;
+                const daily = leasedDays > 0 ? rentAmt / leasedDays : 0;
+
+                const thisYear = new Date().getFullYear();
+                const parts: { year: number; amount: number }[] = [];
+                if (leasedDays > 0) {
+                  for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
+                    const yStart = new Date(y, 0, 1, 12, 0, 0);
+                    const yEnd = new Date(y, 11, 31, 12, 0, 0);
+                    const from = start > yStart ? start : yStart;
+                    const to = end < yEnd ? end : yEnd;
+                    if (to < from) continue;
+                    const days =
+                      Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+                    parts.push({ year: y, amount: Math.round(daily * days) });
+                  }
+                }
+
+                const revenueThisYear =
+                  parts.find((p) => p.year === thisYear)?.amount || 0;
+                const priorYears = parts
+                  .filter((p) => p.year < thisYear)
+                  .reduce((s, p) => s + p.amount, 0);
+                const deferredFuture = parts
+                  .filter((p) => p.year > thisYear)
+                  .reduce((s, p) => s + p.amount, 0);
+
+                return (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Leased days</span>
+                      <span className="font-medium">
+                        {leasedDays}
+                        {(contract.status === "Broken" ||
+                          contract.status === "Cancelled" ||
+                          contract.status === "Ended") &&
+                        contract.endedAt
+                          ? " (to break/end)"
+                          : ""}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        Revenue {thisYear} / Deferred
+                      </span>
+                      <span>
+                        {currency(revenueThisYear)} / {currency(deferredFuture)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5 border-l-2 border-muted pl-2 text-xs text-muted-foreground">
+                      {parts.map((p) => (
+                        <div key={p.year} className="flex justify-between">
+                          <span>
+                            Year {p.year}
+                            {p.year < thisYear
+                              ? " (prior)"
+                              : p.year > thisYear
+                                ? " (deferred)"
+                                : " (this year)"}
+                          </span>
+                          <span>{currency(p.amount)}</span>
+                        </div>
+                      ))}
+                      {priorYears > 0 && (
+                        <div className="flex justify-between">
+                          <span>Prior years total</span>
+                          <span>{currency(priorYears)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-medium text-foreground">
+                        <span>Total rent used</span>
+                        <span>{currency(rentAmt)}</span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Actual rent</span>
                 <span>
@@ -725,6 +802,7 @@ function ContractDetailPage() {
                   )}
                 </span>
               </div>
+
               {(contract.penalty || 0) > 0 || (contract.extraCharges || 0) > 0 ? (
                 <div className="flex justify-between border-t pt-2">
                   <span className="text-muted-foreground">Penalty / Extra</span>
@@ -773,7 +851,6 @@ function ContractDetailPage() {
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
       </div>
 
-      {/* Split PDCs */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -820,7 +897,6 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit cheque */}
       <Dialog open={!!editCheque} onOpenChange={(o) => !o && setEditCheque(null)}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -886,7 +962,6 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Renew confirmation */}
       <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -944,7 +1019,6 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Settlement */}
       <Dialog open={actionOpen} onOpenChange={setActionOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -1036,7 +1110,7 @@ function ContractDetailPage() {
                 </ul>
               )}
             </div>
-            <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+            <div className="space-y-1 rounded-md bg-muted p-3 text-sm">
               <div className="flex justify-between">
                 <span>Calculated rent</span>
                 <span>{currency(calcRent)}</span>
