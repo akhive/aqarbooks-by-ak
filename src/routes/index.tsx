@@ -268,7 +268,6 @@ function Dashboard() {
       ? `${year - 1}: ${currency(totalPrev)} · ${year}: ${currency(totalThis)}`
       : hikePct >= 0
         ? `${hikePct}% ⬆️ · ${year - 1} ${currency(totalPrev)} → ${year} ${currency(totalThis)}`
-        : `${Math.abs(hikePct)}% ⬇️ · ${year - 1} ${currency(totalPrev)} → ${year} ${currency(totalThis)}`;
 
   return (
     <AppShell>
