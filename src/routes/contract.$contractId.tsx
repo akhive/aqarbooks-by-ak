@@ -111,6 +111,10 @@ function ContractDetailPage() {
 
   const isDraft = contract?.status === "Draft";
   const isActive = (contract?.status || "Active") === "Active";
+  const isClosed =
+    contract?.status === "Broken" ||
+    contract?.status === "Cancelled" ||
+    contract?.status === "Ended";
 
   const rentCheques = useMemo(() => {
     if (!contract) return [];
@@ -168,6 +172,7 @@ function ContractDetailPage() {
   const [actionNotes, setActionNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
+  const [viewSettlementOpen, setViewSettlementOpen] = useState(false);
 
   const [renewOpen, setRenewOpen] = useState(false);
   const [renewRent, setRenewRent] = useState(0);
@@ -191,7 +196,6 @@ function ContractDetailPage() {
     setBalance(used + penalty + extra - received - depositRefund);
   }, [contract, actionOpen, breakDate, penalty, extra, depositRefund, rentCheques]);
 
-  // Revenue / deferred / leased days
   const rentBreakdown = useMemo(() => {
     if (!contract) return { leasedDays: 0, revenue: 0, deferred: 0, rentAmt: 0 };
     const rentAmt =
@@ -230,6 +234,14 @@ function ContractDetailPage() {
     return { leasedDays, revenue, deferred, rentAmt };
   }, [contract]);
 
+  const printSettlementNow = () => {
+    setPrintMode(true);
+    setTimeout(() => {
+      window.print();
+      setPrintMode(false);
+    }, 250);
+  };
+
   if (loading) {
     return (
       <AppShell>
@@ -253,6 +265,13 @@ function ContractDetailPage() {
   const depTotal = depositCheques.reduce((s, c) => s + c.amount, 0);
   const baseAmount = splitKind === "rent" ? contract.rent : contract.depositAmount || 0;
   const previewDates = splitDates(contract.startDate, contract.endDate, splitCount);
+
+  const savedActual = contract.actualRent || 0;
+  const savedPenalty = contract.penalty || 0;
+  const savedExtra = contract.extraCharges || 0;
+  const savedEnd = contract.endedAt || "";
+  const savedBalance =
+    savedActual + savedPenalty + savedExtra - receivedTotal - (depositRefund || contract.depositAmount || 0);
 
   const openSplit = (kind: "rent" | "deposit") => {
     setSplitKind(kind);
@@ -328,19 +347,12 @@ function ContractDetailPage() {
       toast.success(`Contract marked as ${actionType}`);
       setActionOpen(false);
       await refresh();
+      setViewSettlementOpen(true);
     } catch (e: any) {
       toast.error(e.message || "Failed");
     } finally {
       setSaving(false);
     }
-  };
-
-  const printSettlement = () => {
-    setPrintMode(true);
-    setTimeout(() => {
-      window.print();
-      setPrintMode(false);
-    }, 250);
   };
 
   const saveChequeEdit = async () => {
@@ -542,8 +554,18 @@ function ContractDetailPage() {
     </Card>
   );
 
+  // Print values: prefer saved settlement, fallback to dialog state
+  const printActual = savedActual || calcRent;
+  const printPenalty = isClosed ? savedPenalty : penalty;
+  const printExtra = isClosed ? savedExtra : extra;
+  const printEnd = savedEnd || breakDate;
+  const printBalance = isClosed
+    ? savedActual + savedPenalty + savedExtra - receivedTotal - (contract.depositAmount || 0)
+    : balance;
+
   return (
     <AppShell>
+      {/* PRINTABLE SETTLEMENT */}
       <div
         id="settlement-print"
         style={printMode ? { display: "block", padding: 24 } : { display: "none" }}
@@ -567,11 +589,19 @@ function ContractDetailPage() {
           <strong>Unit:</strong> {unit?.flatNo}
         </p>
         <p>
-          <strong>Action:</strong> {actionType} · <strong>Break date:</strong> {fmtDate(breakDate)}
+          <strong>Status:</strong> {contract.status} · <strong>Break / end date:</strong>{" "}
+          {fmtDate(printEnd)}
         </p>
         <p>
-          <strong>Period:</strong> {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
+          <strong>Contract period:</strong> {fmtDate(contract.startDate)} →{" "}
+          {fmtDate(contract.endDate)}
         </p>
+        {printEnd && (
+          <p>
+            <strong>Broken / used period:</strong> {fmtDate(contract.startDate)} →{" "}
+            {fmtDate(printEnd)} ({dayCount(contract.startDate, printEnd)} days)
+          </p>
+        )}
         <hr className="my-4" />
         <p className="font-semibold">Collected (Cleared)</p>
         <ul className="mb-3 text-sm">
@@ -594,29 +624,29 @@ function ContractDetailPage() {
         <table className="w-full text-sm">
           <tbody>
             <tr>
-              <td>Calculated / Actual rent</td>
-              <td className="text-right">{currency(calcRent)}</td>
+              <td>Actual rent</td>
+              <td className="text-right">{currency(printActual)}</td>
             </tr>
             <tr>
               <td>Penalty</td>
-              <td className="text-right">{currency(penalty)}</td>
+              <td className="text-right">{currency(printPenalty)}</td>
             </tr>
             <tr>
               <td>Extra charges</td>
-              <td className="text-right">{currency(extra)}</td>
+              <td className="text-right">{currency(printExtra)}</td>
             </tr>
             <tr>
               <td>Collected (cleared)</td>
               <td className="text-right">{currency(receivedTotal)}</td>
             </tr>
             <tr>
-              <td>Deposit refund</td>
-              <td className="text-right">{currency(depositRefund)}</td>
+              <td>Deposit on file</td>
+              <td className="text-right">{currency(contract.depositAmount || 0)}</td>
             </tr>
             <tr>
               <td className="pt-3 font-bold">Balance</td>
               <td className="pt-3 text-right font-bold">
-                {currency(balance)} {balance >= 0 ? "(Receivable)" : "(Payable)"}
+                {currency(printBalance)} {printBalance >= 0 ? "(Receivable)" : "(Payable)"}
               </td>
             </tr>
           </tbody>
@@ -653,6 +683,12 @@ function ContractDetailPage() {
                   Renew
                 </Button>
               )}
+              {isClosed && (
+                <Button variant="outline" onClick={() => setViewSettlementOpen(true)}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  View / Print settlement
+                </Button>
+              )}
               {isActive && (
                 <>
                   <Button variant="outline" onClick={() => openBreak("Ended")}>
@@ -672,8 +708,7 @@ function ContractDetailPage() {
 
         {isDraft && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <strong>Draft</strong> — add / edit PDCs here, then click <strong>Submit contract</strong>.
-            Draft leases do not appear in reports until submitted.
+            <strong>Draft</strong> — add / edit PDCs, then <strong>Submit contract</strong>.
           </div>
         )}
 
@@ -690,7 +725,7 @@ function ContractDetailPage() {
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground">Period</p>
+              <p className="text-xs text-muted-foreground">Contract period</p>
               <p className="font-medium">
                 {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
               </p>
@@ -732,6 +767,20 @@ function ContractDetailPage() {
                 <span className="text-muted-foreground">Unit</span>
                 <span className="font-medium">{unit?.flatNo || "—"}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Contract period</span>
+                <span>
+                  {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
+                </span>
+              </div>
+              {isClosed && contract.endedAt && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Broken period</span>
+                  <span className="font-medium text-red-700">
+                    {fmtDate(contract.startDate)} → {fmtDate(contract.endedAt)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Leased days</span>
                 <span className="font-medium">{rentBreakdown.leasedDays}</span>
@@ -794,6 +843,7 @@ function ContractDetailPage() {
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
       </div>
 
+      {/* Split */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -840,6 +890,7 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit cheque */}
       <Dialog open={!!editCheque} onOpenChange={(o) => !o && setEditCheque(null)}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -905,6 +956,7 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Renew */}
       <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
         <DialogContent className="no-print">
           <DialogHeader>
@@ -935,7 +987,6 @@ function ContractDetailPage() {
                 type="number"
                 value={renewRent || ""}
                 onChange={(e) => setRenewRent(Number(e.target.value))}
-                placeholder="Enter new annual rent"
               />
             </div>
             <div>
@@ -946,10 +997,6 @@ function ContractDetailPage() {
                 onChange={(e) => setRenewDeposit(Number(e.target.value))}
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Previous rent: {currency(contract.rent)}. Creates a <strong>Draft</strong> lease —
-              add PDCs, then Submit.
-            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenewOpen(false)}>
@@ -962,6 +1009,7 @@ function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Break / settle (before confirm) */}
       <Dialog open={actionOpen} onOpenChange={setActionOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -978,7 +1026,8 @@ function ContractDetailPage() {
               <Label>Break / end date</Label>
               <Input type="date" value={breakDate} onChange={(e) => setBreakDate(e.target.value)} />
               <p className="mt-1 text-xs text-muted-foreground">
-                Days = {dayCount(contract.startDate, breakDate)} · rent ÷ 365 × days
+                Broken period: {fmtDate(contract.startDate)} → {fmtDate(breakDate)} (
+                {dayCount(contract.startDate, breakDate)} days)
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -999,7 +1048,7 @@ function ContractDetailPage() {
                 />
               </div>
               <div>
-                <Label>Extra charges (other income)</Label>
+                <Label>Extra charges</Label>
                 <Input
                   type="number"
                   value={extra}
@@ -1020,7 +1069,7 @@ function ContractDetailPage() {
                 Collected (Cleared) — {currency(receivedTotal)}
               </p>
               {clearedRent.length === 0 ? (
-                <p className="text-xs text-muted-foreground">None cleared yet.</p>
+                <p className="text-xs text-muted-foreground">None</p>
               ) : (
                 <ul className="space-y-1 text-xs">
                   {clearedRent.map((c) => (
@@ -1036,10 +1085,10 @@ function ContractDetailPage() {
             </div>
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
               <p className="mb-2 text-sm font-medium text-amber-900">
-                Pending PDCs to return — {currency(pendingReturnTotal)}
+                Pending PDCs — {currency(pendingReturnTotal)}
               </p>
               {pendingReturnPdcs.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No open PDCs.</p>
+                <p className="text-xs text-muted-foreground">None</p>
               ) : (
                 <ul className="space-y-1 text-xs">
                   {pendingReturnPdcs.map((c) => (
@@ -1091,7 +1140,7 @@ function ContractDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={printSettlement}>
+            <Button variant="outline" onClick={printSettlementNow}>
               <Printer className="mr-2 h-4 w-4" />
               Print / PDF
             </Button>
@@ -1104,6 +1153,119 @@ function ContractDetailPage() {
               disabled={saving}
             >
               Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View saved settlement after confirm */}
+      <Dialog open={viewSettlementOpen} onOpenChange={setViewSettlementOpen}>
+        <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Settlement — {contract.status}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              <strong>Lease:</strong> {contract.leaseNo}
+            </p>
+            <p>
+              <strong>Tenant:</strong> {tenant?.name}
+            </p>
+            <p>
+              <strong>Unit:</strong> {unit?.flatNo}
+            </p>
+            <p>
+              <strong>Contract period:</strong> {fmtDate(contract.startDate)} →{" "}
+              {fmtDate(contract.endDate)}
+            </p>
+            <p>
+              <strong>Broken period:</strong> {fmtDate(contract.startDate)} →{" "}
+              {fmtDate(contract.endedAt || "")} (
+              {dayCount(contract.startDate, contract.endedAt || contract.endDate)} days)
+            </p>
+
+            <div className="rounded-md border p-3">
+              <p className="mb-2 font-medium">Collected (Cleared) — {currency(receivedTotal)}</p>
+              {clearedRent.length === 0 ? (
+                <p className="text-xs text-muted-foreground">None</p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {clearedRent.map((c) => (
+                    <li key={c.id} className="flex justify-between">
+                      <span>
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"}
+                      </span>
+                      <span>{currency(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="mb-2 font-medium text-amber-900">
+                Pending PDCs — {currency(pendingReturnTotal)}
+              </p>
+              {pendingReturnPdcs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">None</p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {pendingReturnPdcs.map((c) => (
+                    <li key={c.id} className="flex justify-between">
+                      <span>
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"}
+                      </span>
+                      <span>{currency(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-1 rounded-md bg-muted p-3">
+              <div className="flex justify-between">
+                <span>Actual rent</span>
+                <span>{currency(savedActual)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Penalty</span>
+                <span>{currency(savedPenalty)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Extra charges</span>
+                <span>{currency(savedExtra)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Collected (cleared)</span>
+                <span>{currency(receivedTotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Deposit on file</span>
+                <span>{currency(contract.depositAmount || 0)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 font-semibold">
+                <span>Balance</span>
+                <span>
+                  {currency(
+                    savedActual + savedPenalty + savedExtra - receivedTotal - (contract.depositAmount || 0),
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {contract.notes && (
+              <p className="text-xs text-muted-foreground">
+                <strong>Notes:</strong> {contract.notes}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={printSettlementNow}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print / PDF
+            </Button>
+            <Button variant="outline" onClick={() => setViewSettlementOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
