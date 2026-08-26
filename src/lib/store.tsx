@@ -341,25 +341,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       deleteContract: async (id) => {
-        const { error } = await supabase
-          .from("contracts")
-          .update({ deleted_at: new Date().toISOString() })
-          .eq("id", id);
-        if (error) throw error;
-        setData((p) => ({
-          ...p,
-          contracts: p.contracts.filter((x) => x.id !== id),
-        }));
-      },
+  // Soft-delete contract
+  const { error } = await supabase
+    .from("contracts")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
 
-      restoreContract: async (id) => {
-        const { error } = await supabase
-          .from("contracts")
-          .update({ deleted_at: null })
-          .eq("id", id);
-        if (error) throw error;
-        await refresh();
-      },
+  // Hard-delete linked PDCs (same contract)
+  const { error: chErr } = await supabase.from("cheques").delete().eq("contract_id", id);
+  if (chErr) throw chErr;
+
+  setData((p) => ({
+    ...p,
+    contracts: p.contracts.filter((x) => x.id !== id),
+    cheques: p.cheques.filter((x) => x.contractId !== id),
+  }));
+},
 
       addCheque: async (c) => {
         const { data: row, error } = await supabase
