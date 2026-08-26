@@ -696,6 +696,7 @@ function ContractDetailPage() {
               {/* Leased days + year-by-year revenue */}
               {(() => {
                               {(() => {
+              {(() => {
                 const rentAmt =
                   contract.actualRent && contract.actualRent > 0
                     ? contract.actualRent
