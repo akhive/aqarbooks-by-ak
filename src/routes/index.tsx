@@ -115,16 +115,13 @@ function Dashboard() {
   const today = new Date().toISOString().slice(0, 10);
 
   /**
-   * Income (accrual) =
-   *   sum of each contract's rent share for this calendar year
-   *   + penalty + extra charges ended this year
-   * (Previous-year deferred is included automatically as this year's share.)
-   * Net profit = Income − expenses
+   * Income (accrual) = this year rent share only (incl. prior deferred into this year)
+   * NO penalty / other income
+   * Net profit = income − expenses
    */
-  const { income, expense, monthly, otherIncome } = useMemo(() => {
+  const { income, expense, monthly } = useMemo(() => {
     const monthly = MONTHS.map((m) => ({ month: m, income: 0, expense: 0, profit: 0 }));
     let income = 0;
-    let otherIncome = 0;
     let expense = 0;
 
     data.contracts.forEach((c) => {
@@ -135,7 +132,6 @@ function Dashboard() {
       const yearAmt = rentInYear(c.startDate, end, r, year);
       income += yearAmt;
 
-      // monthly breakdown for chart
       if (yearAmt > 0 && c.startDate && end) {
         const start = new Date(c.startDate + "T12:00:00");
         const endD = new Date(end + "T12:00:00");
@@ -152,17 +148,6 @@ function Dashboard() {
           }
         }
       }
-
-      const pen = (c.penalty || 0) + (c.extraCharges || 0);
-      if (pen > 0) {
-        const endIso = c.endedAt || c.endDate;
-        if (endIso && new Date(endIso).getFullYear() === year) {
-          otherIncome += pen;
-          income += pen;
-          const m = new Date(endIso).getMonth();
-          monthly[m]!.income += pen;
-        }
-      }
     });
 
     data.expenses.forEach((e) => {
@@ -177,7 +162,7 @@ function Dashboard() {
       m.profit = m.income - m.expense;
     });
 
-    return { income, expense, monthly, otherIncome };
+    return { income, expense, monthly };
   }, [data, year]);
 
   const { occupiedCount, vacant, totalUnits } = useMemo(() => {
@@ -198,40 +183,37 @@ function Dashboard() {
     };
   }, [data.contracts, data.units, today]);
 
+  /**
+   * Average Yearly Rental = avg of this-year rent shares
+   * Hike % = (totalThis − totalPrev) / totalPrev × 100
+   */
   const { avgRent, hikePct } = useMemo(() => {
-    const active = data.contracts.filter((c) => {
-      if ((c.status || "Active") === "Draft") return false;
-      if ((c.status || "Active") !== "Active") return false;
-      if (c.startDate && c.startDate > today) return false;
-      if (c.endDate && c.endDate < today) return false;
-      return true;
-    });
-    const avgRent =
-      active.length > 0
-        ? Math.round(active.reduce((s, c) => s + effectiveRent(c), 0) / active.length)
-        : 0;
+    let totalThis = 0;
+    let totalPrev = 0;
+    let countThis = 0;
 
-    const prevYear = year - 1;
-    const prevStart = `${prevYear}-01-01`;
-    const prevEnd = `${prevYear}-12-31`;
-    const prevContracts = data.contracts.filter((c) => {
-      if ((c.status || "Active") === "Draft") return false;
-      if (!c.startDate || !c.endDate) return false;
+    data.contracts.forEach((c) => {
+      if ((c.status || "Active") === "Draft") return;
+      const r = effectiveRent(c);
       const end = effectiveEnd(c);
-      if (end < prevStart || c.startDate > prevEnd) return false;
-      return true;
+
+      const amtThis = rentInYear(c.startDate, end, r, year);
+      if (amtThis > 0) {
+        totalThis += amtThis;
+        countThis += 1;
+      }
+      totalPrev += rentInYear(c.startDate, end, r, year - 1);
     });
-    const prevAvgRent =
-      prevContracts.length > 0
-        ? Math.round(prevContracts.reduce((s, c) => s + effectiveRent(c), 0) / prevContracts.length)
-        : 0;
+
+    const avgRent = countThis > 0 ? Math.round(totalThis / countThis) : 0;
 
     let hikePct: number | null = null;
-    if (prevAvgRent > 0 && avgRent > 0) {
-      hikePct = Math.round(((avgRent - prevAvgRent) / prevAvgRent) * 1000) / 10;
+    if (totalPrev > 0) {
+      hikePct = Math.round(((totalThis - totalPrev) / totalPrev) * 1000) / 10;
     }
+
     return { avgRent, hikePct };
-  }, [data.contracts, today, year]);
+  }, [data.contracts, year]);
 
   const pieData = useMemo(() => {
     const years = [year - 2, year - 1, year];
@@ -240,11 +222,6 @@ function Dashboard() {
       data.contracts.forEach((c) => {
         if ((c.status || "Active") === "Draft") return;
         total += rentInYear(c.startDate, effectiveEnd(c), effectiveRent(c), y);
-        const pen = (c.penalty || 0) + (c.extraCharges || 0);
-        if (pen > 0) {
-          const endIso = c.endedAt || c.endDate;
-          if (endIso && new Date(endIso).getFullYear() === y) total += pen;
-        }
       });
       return { name: String(y), value: total };
     });
@@ -285,10 +262,10 @@ function Dashboard() {
 
   const hikeHint =
     hikePct == null
-      ? "No previous-year average"
+      ? "No previous-year total"
       : hikePct >= 0
-        ? `${hikePct}% ⬆️ vs ${year - 1}`
-        : `${Math.abs(hikePct)}% ⬇️ vs ${year - 1}`;
+        ? `${hikePct}% ⬆️ vs ${year - 1} total`
+        : `${Math.abs(hikePct)}% ⬇️ vs ${year - 1} total`;
 
   const profit = income - expense;
 
@@ -300,11 +277,7 @@ function Dashboard() {
         <Stat
           label="Income (accrual)"
           value={currency(income)}
-          hint={
-            otherIncome
-              ? `Lease revenue + penalty/extra ${currency(otherIncome)}`
-              : "This year rent share (incl. prior deferred)"
-          }
+          hint="This year rent share (incl. prior deferred)"
           icon={ArrowUpRight}
           tone="positive"
         />
@@ -312,7 +285,7 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint="Revenue + penalty/extra − expenses"
+          hint="Rent income − expenses"
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
         />
