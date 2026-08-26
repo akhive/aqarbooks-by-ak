@@ -191,13 +191,18 @@ function Dashboard() {
   }, [data.contracts, data.units, today]);
 
 
+  /**
+   * Average Yearly Rental =
+   *   Income(2026) − Income(2025)   [same accrual as Income card]
+   * % = that amount / Income(2025) × 100
+   */
   const { yoyChange, hikePct, totalThis, totalPrev } = useMemo(() => {
     let totalThis = 0;
     let totalPrev = 0;
 
     data.contracts.forEach((c) => {
       if ((c.status || "Active") === "Draft") return;
-      const r = c.rent; // contract rent only
+      const r = effectiveRent(c);
       const end = effectiveEnd(c);
       totalThis += rentInYear(c.startDate, end, r, year);
       totalPrev += rentInYear(c.startDate, end, r, year - 1);
@@ -207,7 +212,7 @@ function Dashboard() {
 
     let hikePct: number | null = null;
     if (totalPrev > 0) {
-      hikePct = Math.round(((totalThis - totalPrev) / totalPrev) * 1000) / 10;
+      hikePct = Math.round((yoyChange / totalPrev) * 1000) / 10;
     }
 
     return { yoyChange, hikePct, totalThis, totalPrev };
