@@ -695,6 +695,7 @@ function ContractDetailPage() {
 
               {/* Leased days + year-by-year revenue */}
               {(() => {
+                              {(() => {
                 const rentAmt =
                   contract.actualRent && contract.actualRent > 0
                     ? contract.actualRent
@@ -716,7 +717,9 @@ function ContractDetailPage() {
                 const daily = leasedDays > 0 ? rentAmt / leasedDays : 0;
 
                 const thisYear = new Date().getFullYear();
-                const parts: { year: number; amount: number }[] = [];
+                let revenue = 0;
+                let deferred = 0;
+
                 if (leasedDays > 0) {
                   for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
                     const yStart = new Date(y, 0, 1, 12, 0, 0);
@@ -726,42 +729,27 @@ function ContractDetailPage() {
                     if (to < from) continue;
                     const days =
                       Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
-                    parts.push({ year: y, amount: Math.round(daily * days) });
+                    const amt = Math.round(daily * days);
+                    if (y === thisYear) revenue += amt;
+                    else deferred += amt;
                   }
                 }
-
-                const revenueThisYear =
-                  parts.find((p) => p.year === thisYear)?.amount || 0;
-                const priorYears = parts
-                  .filter((p) => p.year < thisYear)
-                  .reduce((s, p) => s + p.amount, 0);
-                const deferredFuture = parts
-                  .filter((p) => p.year > thisYear)
-                  .reduce((s, p) => s + p.amount, 0);
 
                 return (
                   <>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Leased days</span>
-                      <span className="font-medium">
-                        {leasedDays}
-                        {(contract.status === "Broken" ||
-                          contract.status === "Cancelled" ||
-                          contract.status === "Ended") &&
-                        contract.endedAt
-                          ? " (to break/end)"
-                          : ""}
-                      </span>
+                      <span className="font-medium">{leasedDays}</span>
                     </div>
-
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        Revenue {thisYear} / Deferred
-                      </span>
+                      <span className="text-muted-foreground">Revenue / Deferred</span>
                       <span>
-                        {currency(revenueThisYear)} / {currency(deferredFuture)}
+                        {currency(revenue)} / {currency(deferred)}
                       </span>
                     </div>
+                  </>
+                );
+              })()}
 
                     <div className="space-y-0.5 border-l-2 border-muted pl-2 text-xs text-muted-foreground">
                       {parts.map((p) => (
