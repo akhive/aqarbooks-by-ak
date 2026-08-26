@@ -283,7 +283,7 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint={}
+          hint=""
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
         />
