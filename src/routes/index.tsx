@@ -275,7 +275,7 @@ function Dashboard() {
         <Stat
           label="Income (accrual)"
           value={currency(income)}
-          hint="This year rent share (incl. prior deferred)"
+          hint=""
           icon={ArrowUpRight}
           tone="positive"
         />
