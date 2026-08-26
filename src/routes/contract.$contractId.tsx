@@ -687,15 +687,11 @@ function ContractDetailPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Email</span>
                 <span>{tenant?.email || "—"}</span>
-              </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Unit</span>
                 <span className="font-medium">{unit?.flatNo || "—"}</span>
               </div>
 
-              {/* Leased days + year-by-year revenue */}
-              {(() => {
-                              {(() => {
               {(() => {
                 const rentAmt =
                   contract.actualRent && contract.actualRent > 0
@@ -751,6 +747,17 @@ function ContractDetailPage() {
                   </>
                 );
               })()}
+
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Actual rent</span>
+                <span>
+                  {currency(
+                    contract.actualRent && contract.actualRent > 0
+                      ? contract.actualRent
+                      : contract.rent,
+                  )}
+                </span>
+              </div>
 
                     <div className="space-y-0.5 border-l-2 border-muted pl-2 text-xs text-muted-foreground">
                       {parts.map((p) => (
