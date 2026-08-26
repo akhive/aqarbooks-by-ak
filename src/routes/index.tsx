@@ -273,7 +273,7 @@ function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
-          label="Income (accrual)"
+          label="Income"
           value={currency(income)}
           hint=""
           icon={ArrowUpRight}
@@ -283,11 +283,7 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint={
-            otherIncome > 0
-              ? `Rent + penalty/extra ${currency(otherIncome)} − expenses`
-              : "This-year rent + penalty/extra − expenses"
-          }
+          hint={}
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
         />
