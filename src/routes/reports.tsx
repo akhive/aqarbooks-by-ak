@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, daysUntil, fmtDate, useStore, type Contract } from "@/lib/store";
+import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/reports")({
   head: () => ({
@@ -37,6 +37,7 @@ function splitByYear(startDate: string, endDate: string, rent: number) {
   }
   return result;
 }
+
 function effectiveRent(c: { rent: number; actualRent?: number }) {
   return c.actualRent && c.actualRent > 0 ? c.actualRent : c.rent;
 }
@@ -77,10 +78,28 @@ function ReportActions({ onExport }: { onExport: () => void }) {
   );
 }
 
+function LeaseLink({ id, leaseNo }: { id: string; leaseNo?: string }) {
+  if (!id) return <span>{leaseNo || "—"}</span>;
+  return (
+    <Link
+      to="/contract/$contractId"
+      params={{ contractId: id }}
+      className="font-medium text-primary underline-offset-2 hover:underline"
+    >
+      {leaseNo || "—"}
+    </Link>
+  );
+}
+
 function ReportsPage() {
   const { data } = useStore();
-  const today = new Date().toISOString().slice(0, 10);
-  const year = new Date().getFullYear();
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+  const year = now.getFullYear();
   const prevYear = year - 1;
 
   const [from, setFrom] = useState("");
@@ -117,6 +136,7 @@ function ReportsPage() {
 
   const leaseRows = useMemo(() => {
     const rows = data.contracts.filter((c) => {
+      if ((c.status || "Active") === "Draft") return false;
       if (from && c.endDate < from) return false;
       if (to && c.startDate > to) return false;
       if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
@@ -136,6 +156,7 @@ function ReportsPage() {
   const incomeRows = useMemo(() => {
     const rows = data.contracts
       .filter((c) => {
+        if ((c.status || "Active") === "Draft") return false;
         if (from && c.endDate < from) return false;
         if (to && c.startDate > to) return false;
         if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
@@ -171,6 +192,16 @@ function ReportsPage() {
     incomeSort,
   ]);
 
+  const incomeTotals = useMemo(
+    () => ({
+      previous: incomeRows.reduce((s, r) => s + (r.previous || 0), 0),
+      current: incomeRows.reduce((s, r) => s + (r.current || 0), 0),
+      deferred: incomeRows.reduce((s, r) => s + (r.deferred || 0), 0),
+      total: incomeRows.reduce((s, r) => s + (r.total || 0), 0),
+    }),
+    [incomeRows],
+  );
+
   const upcoming = useMemo(() => {
     const rows = data.cheques.filter((c) => {
       if (c.status !== "PDC") return false;
@@ -178,6 +209,7 @@ function ReportsPage() {
       if (from && c.chequeDate < from) return false;
       if (to && c.chequeDate > to) return false;
       const contract = data.contracts.find((x) => x.id === c.contractId);
+      if (contract && contract.status === "Draft") return false;
       if (!matchTenantFlat(c.tenantId, contract?.unitId)) return false;
       return true;
     });
@@ -188,10 +220,16 @@ function ReportsPage() {
     );
   }, [data.cheques, data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch, pdcSort]);
 
+  const pdcTotal = useMemo(
+    () => upcoming.reduce((s, c) => s + (c.amount || 0), 0),
+    [upcoming],
+  );
+
   const yearly = useMemo(() => {
     const map = new Map<number, { income: number; expense: number }>();
 
     data.contracts.forEach((c) => {
+      if ((c.status || "Active") === "Draft") return;
       if (!matchTenantFlat(c.tenantId, c.unitId)) return;
 
       const byYear = splitByYear(c.startDate, effectiveEnd(c), effectiveRent(c));
@@ -231,6 +269,16 @@ function ReportsPage() {
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [data.contracts, data.expenses, data.tenants, data.units, from, to, tenantSearch, flatSearch]);
 
+  const profitTotals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    yearly.forEach(([, r]) => {
+      income += r.income;
+      expense += r.expense;
+    });
+    return { income, expense, profit: income - expense };
+  }, [yearly]);
+
   const renewals = useMemo(
     () =>
       data.contracts
@@ -245,6 +293,23 @@ function ReportsPage() {
         })
         .sort((a, b) => a.endDate.localeCompare(b.endDate)),
     [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch],
+  );
+
+  /** Ended today or earlier (by contract end date) */
+  const expired = useMemo(
+    () =>
+      data.contracts
+        .filter((c) => {
+          if ((c.status || "Active") === "Draft") return false;
+          const end = effectiveEnd(c);
+          if (!end || end > today) return false;
+          if (from && end < from) return false;
+          if (to && end > to) return false;
+          if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
+          return true;
+        })
+        .sort((a, b) => effectiveEnd(b).localeCompare(effectiveEnd(a))),
+    [data.contracts, data.tenants, data.units, today, from, to, tenantSearch, flatSearch],
   );
 
   const vacant = useMemo(() => {
@@ -274,6 +339,7 @@ function ReportsPage() {
         const contract = data.contracts.find((x) => x.id === c.contractId);
         return {
           id: c.id,
+          contractId: c.contractId || "",
           leaseNo: contract?.leaseNo || "",
           tenantId: c.tenantId || contract?.tenantId || "",
           unitId: contract?.unitId || "",
@@ -391,46 +457,44 @@ function ReportsPage() {
               setFlatSearch("");
             }}
           >
-            Clear filters
+            Clear
           </Button>
-          <p className="self-center text-sm text-muted-foreground">
-            Active period: <strong>{periodLabel}</strong>
-          </p>
+          <p className="w-full text-xs text-muted-foreground">Active period: {periodLabel}</p>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="lease">
-        <TabsList className="no-print flex h-auto flex-wrap">
+      <Tabs defaultValue="lease" className="space-y-4">
+        <TabsList className="no-print flex h-auto flex-wrap gap-1">
           <TabsTrigger value="lease">Lease report</TabsTrigger>
           <TabsTrigger value="income">Income breakdown</TabsTrigger>
           <TabsTrigger value="pdc">Upcoming PDCs</TabsTrigger>
           <TabsTrigger value="profit">Yearly profit</TabsTrigger>
           <TabsTrigger value="renewal">Contract renewals</TabsTrigger>
+          <TabsTrigger value="expired">Expired contracts</TabsTrigger>
           <TabsTrigger value="vacant">Vacant units</TabsTrigger>
           <TabsTrigger value="deposit">Deposits</TabsTrigger>
           <TabsTrigger value="other-income">Other incomes</TabsTrigger>
         </TabsList>
 
+        {/* LEASE */}
         <TabsContent value="lease">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Lease report</CardTitle>
-                <CardDescription>
-                  {leaseRows.length} contract(s) · Total actual rent {currency(leaseTotal)}
-                </CardDescription>
+                <CardDescription>{leaseRows.length} lease(s)</CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `lease_report.csv`,
-                    ["Lease No", "Tenant", "Unit", "Start", "End", "Contract Rent", "Actual Rent"],
+                    ["Lease No", "Tenant", "Unit", "Start", "End", "Rent", "Actual Rent"],
                     leaseRows.map((c) => [
                       c.leaseNo,
                       tenantName(c.tenantId),
                       unitLabel(c.unitId),
                       c.startDate,
-                      c.endDate,
+                      effectiveEnd(c),
                       c.rent,
                       effectiveRent(c),
                     ]),
@@ -455,21 +519,16 @@ function ReportsPage() {
                     <TableHead>Unit</TableHead>
                     <TableHead>Start</TableHead>
                     <TableHead>End</TableHead>
-                    <TableHead className="text-right">Contract rent</TableHead>
+                    <TableHead className="text-right">Rent</TableHead>
                     <TableHead className="text-right">Actual rent</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {leaseRows.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                        No contracts match filters.
-                      </TableCell>
-                    </TableRow>
-                  )}
                   {leaseRows.map((c) => (
                     <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
+                      <TableCell>
+                        <LeaseLink id={c.id} leaseNo={c.leaseNo} />
+                      </TableCell>
                       <TableCell>{tenantName(c.tenantId)}</TableCell>
                       <TableCell>{unitLabel(c.unitId)}</TableCell>
                       <TableCell>{fmtDate(c.startDate)}</TableCell>
@@ -492,6 +551,7 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
+        {/* INCOME */}
         <TabsContent value="income">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -505,7 +565,14 @@ function ReportsPage() {
                 onExport={() =>
                   exportCSV(
                     `income_breakdown.csv`,
-                    ["Lease No", "Tenant", "Actual Rent", String(prevYear), String(year), "Deferred"],
+                    [
+                      "Lease No",
+                      "Tenant",
+                      "Actual Rent",
+                      String(prevYear),
+                      String(year),
+                      "Deferred",
+                    ],
                     incomeRows.map((r) => [
                       r.leaseNo,
                       tenantName(r.tenantId),
@@ -542,7 +609,9 @@ function ReportsPage() {
                 <TableBody>
                   {incomeRows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
+                      <TableCell>
+                        <LeaseLink id={r.id} leaseNo={r.leaseNo} />
+                      </TableCell>
                       <TableCell>{tenantName(r.tenantId)}</TableCell>
                       <TableCell>
                         {fmtDate(r.startDate)} → {fmtDate(effectiveEnd(r))}
@@ -552,15 +621,27 @@ function ReportsPage() {
                       <TableCell className="text-right font-medium text-emerald-600">
                         {currency(r.current)}
                       </TableCell>
-                      <TableCell className="text-right text-amber-600">{currency(r.deferred)}</TableCell>
+                      <TableCell className="text-right text-amber-600">
+                        {currency(r.deferred)}
+                      </TableCell>
                     </TableRow>
                   ))}
+                  {incomeRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={3}>TOTAL</TableCell>
+                      <TableCell className="text-right">{currency(incomeTotals.total)}</TableCell>
+                      <TableCell className="text-right">{currency(incomeTotals.previous)}</TableCell>
+                      <TableCell className="text-right">{currency(incomeTotals.current)}</TableCell>
+                      <TableCell className="text-right">{currency(incomeTotals.deferred)}</TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* PDC */}
         <TabsContent value="pdc">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -616,12 +697,20 @@ function ReportsPage() {
                       <TableCell className="text-right">{daysUntil(c.chequeDate)} days</TableCell>
                     </TableRow>
                   ))}
+                  {upcoming.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={4}>TOTAL</TableCell>
+                      <TableCell className="text-right">{currency(pdcTotal)}</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* PROFIT */}
         <TabsContent value="profit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -662,12 +751,23 @@ function ReportsPage() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {yearly.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell>TOTAL</TableCell>
+                      <TableCell className="text-right">{currency(profitTotals.income)}</TableCell>
+                      <TableCell className="text-right text-red-600">
+                        {currency(profitTotals.expense)}
+                      </TableCell>
+                      <TableCell className="text-right">{currency(profitTotals.profit)}</TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* RENEWALS */}
         <TabsContent value="renewal">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -700,18 +800,20 @@ function ReportsPage() {
                     <TableHead>Tenant</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>End</TableHead>
-                    <TableHead>Rent</TableHead>
+                    <TableHead className="text-right">Rent</TableHead>
                     <TableHead className="text-right">Days left</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {renewals.map((c) => (
                     <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
+                      <TableCell>
+                        <LeaseLink id={c.id} leaseNo={c.leaseNo} />
+                      </TableCell>
                       <TableCell>{tenantName(c.tenantId)}</TableCell>
                       <TableCell>{unitLabel(c.unitId)}</TableCell>
                       <TableCell>{fmtDate(c.endDate)}</TableCell>
-                      <TableCell>{currency(c.rent)}</TableCell>
+                      <TableCell className="text-right">{currency(c.rent)}</TableCell>
                       <TableCell className="text-right">{daysUntil(c.endDate)} days</TableCell>
                     </TableRow>
                   ))}
@@ -721,19 +823,97 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
+        {/* EXPIRED */}
+        <TabsContent value="expired">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">Expired contracts</CardTitle>
+                <CardDescription>
+                  Period ended on or before today · {expired.length}
+                </CardDescription>
+              </div>
+              <ReportActions
+                onExport={() =>
+                  exportCSV(
+                    `expired_contracts.csv`,
+                    ["Lease No", "Tenant", "Unit", "Start", "End", "Status", "Rent", "Days overdue"],
+                    expired.map((c) => [
+                      c.leaseNo,
+                      tenantName(c.tenantId),
+                      unitLabel(c.unitId),
+                      c.startDate,
+                      effectiveEnd(c),
+                      c.status || "Active",
+                      c.rent,
+                      Math.abs(Math.min(0, daysUntil(effectiveEnd(c)))),
+                    ]),
+                  )
+                }
+              />
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lease No</TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Rent</TableHead>
+                    <TableHead className="text-right">Overdue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {expired.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                        No expired contracts.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {expired.map((c) => {
+                    const end = effectiveEnd(c);
+                    const overdue = daysUntil(end);
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell>
+                          <LeaseLink id={c.id} leaseNo={c.leaseNo} />
+                        </TableCell>
+                        <TableCell>{tenantName(c.tenantId)}</TableCell>
+                        <TableCell>{unitLabel(c.unitId)}</TableCell>
+                        <TableCell>{fmtDate(c.startDate)}</TableCell>
+                        <TableCell>{fmtDate(end)}</TableCell>
+                        <TableCell>{c.status || "Active"}</TableCell>
+                        <TableCell className="text-right">{currency(c.rent)}</TableCell>
+                        <TableCell className="text-right text-red-600">
+                          {overdue === 0 ? "Ends today" : `${Math.abs(overdue)} days`}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* VACANT */}
         <TabsContent value="vacant">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Vacant units</CardTitle>
-                <CardDescription>{vacant.length} unit(s) with no active contract</CardDescription>
+                <CardDescription>{vacant.length} unit(s)</CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `vacant_units.csv`,
-                    ["Flat", "Building", "Bedroom Type", "Market Rent"],
-                    vacant.map((u) => [u.flatNo, u.building, u.bedroomType, u.marketRent]),
+                    ["Flat", "Building", "Type", "Market Rent"],
+                    vacant.map((u) => [u.flatNo, u.building || "", u.bedroomType || "", u.marketRent || 0]),
                   )
                 }
               />
@@ -744,8 +924,8 @@ function ReportsPage() {
                   <TableRow>
                     <TableHead>Flat</TableHead>
                     <TableHead>Building</TableHead>
-                    <TableHead>Bedroom Type</TableHead>
-                    <TableHead className="text-right">Market Rent</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Market rent</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -754,7 +934,7 @@ function ReportsPage() {
                       <TableCell className="font-medium">{u.flatNo}</TableCell>
                       <TableCell>{u.building || "—"}</TableCell>
                       <TableCell>{u.bedroomType || "—"}</TableCell>
-                      <TableCell className="text-right">{currency(u.marketRent)}</TableCell>
+                      <TableCell className="text-right">{currency(u.marketRent || 0)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -763,29 +943,19 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
+        {/* DEPOSIT */}
         <TabsContent value="deposit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle className="text-base">Deposit report</CardTitle>
-                <CardDescription>
-                  {depositRows.length} deposit cheque(s) · Total {currency(depositTotal)}
-                </CardDescription>
+                <CardTitle className="text-base">Deposits</CardTitle>
+                <CardDescription>{depositRows.length} deposit cheque(s)</CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
-                    `deposit_report.csv`,
-                    [
-                      "Lease No",
-                      "Tenant",
-                      "Unit",
-                      "Start",
-                      "End",
-                      "Cheque No",
-                      "Bank",
-                      "Deposit Amount",
-                    ],
+                    `deposits.csv`,
+                    ["Lease No", "Tenant", "Unit", "Start", "End", "Cheque No", "Bank", "Amount"],
                     depositRows.map((r) => [
                       r.leaseNo,
                       tenantName(r.tenantId),
@@ -832,7 +1002,13 @@ function ReportsPage() {
                   )}
                   {depositRows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
+                      <TableCell>
+                        {r.contractId ? (
+                          <LeaseLink id={r.contractId} leaseNo={r.leaseNo} />
+                        ) : (
+                          r.leaseNo || "—"
+                        )}
+                      </TableCell>
                       <TableCell>{tenantName(r.tenantId)}</TableCell>
                       <TableCell>{unitLabel(r.unitId)}</TableCell>
                       <TableCell>{fmtDate(r.startDate)}</TableCell>
@@ -854,20 +1030,19 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
+        {/* OTHER INCOME */}
         <TabsContent value="other-income">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Other incomes</CardTitle>
-                <CardDescription>
-                  Penalty &amp; extra charges · {otherIncomeRows.length} lease(s)
-                </CardDescription>
+                <CardDescription>Penalty + extra charges from break/cancel</CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `other_incomes.csv`,
-                    ["Lease No", "Tenant", "Period", "Penalty", "Other income", "Total"],
+                    ["Lease No", "Tenant", "Period", "Penalty", "Other", "Total"],
                     otherIncomeRows.map((r) => [
                       r.leaseNo,
                       tenantName(r.tenantId),
@@ -902,7 +1077,9 @@ function ReportsPage() {
                   )}
                   {otherIncomeRows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.leaseNo || "—"}</TableCell>
+                      <TableCell>
+                        <LeaseLink id={r.id} leaseNo={r.leaseNo} />
+                      </TableCell>
                       <TableCell>{tenantName(r.tenantId)}</TableCell>
                       <TableCell>
                         {fmtDate(r.startDate)} → {fmtDate(r.endDate)}
