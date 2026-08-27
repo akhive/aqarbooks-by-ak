@@ -286,9 +286,9 @@ function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
-          label="Income (accrual)"
+          label="Income"
           value={currency(income)}
-          hint="This year rent share (incl. prior deferred)"
+          hint=""
           icon={ArrowUpRight}
           tone="positive"
         />
