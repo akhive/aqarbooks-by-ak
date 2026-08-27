@@ -396,9 +396,15 @@ function ContractDetailPage() {
   };
 
   const openRenew = () => {
-    const duration = Math.max(0, dayCount(contract.startDate, contract.endDate) - 1);
+    // Start = day after current end
     const newStart = addDays(contract.endDate, 1);
-    const newEnd = addDays(newStart, duration);
+
+    // End = same calendar date as old end, +1 year (anniversary)
+    // e.g. 14 Aug 2027 → 14 Aug 2028 (366 days if leap year in between)
+    const oldEnd = new Date(contract.endDate + "T12:00:00");
+    oldEnd.setFullYear(oldEnd.getFullYear() + 1);
+    const newEnd = toYmd(oldEnd);
+
     const nums = data.contracts
       .map((c) => {
         const m = (c.leaseNo || "").match(/(\d+)/);
