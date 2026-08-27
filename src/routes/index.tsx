@@ -66,6 +66,15 @@ function rentInYear(startDate: string, endDate: string, rent: number, y: number)
   return Math.round((rent / totalDays) * days);
 }
 
+function localToday() {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function Stat({
   label,
   value,
@@ -97,7 +106,7 @@ function Stat({
       <CardContent className="flex items-start justify-between gap-3 pb-5 pt-5">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className={`mt-1 truncate text-xl font-semibold tracking-tight ${valueClass}`}>{value}</p>
+          <p className={`mt-1 truncate text-2xl font-semibold tracking-tight ${valueClass}`}>{value}</p>
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
         <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconWrap}`}>
@@ -111,9 +120,8 @@ function Stat({
 function Dashboard() {
   const { data } = useStore();
   const year = new Date().getFullYear();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
 
-  /** Income (accrual) = rent share this year only. otherIncome = penalty+extra this year. */
   const { income, expense, otherIncome, incomePrev } = useMemo(() => {
     let income = 0;
     let incomePrev = 0;
@@ -147,7 +155,6 @@ function Dashboard() {
 
   const profit = income + otherIncome - expense;
 
-  /** Trend chart: PDC received (cleared/deposited) by month − expenses */
   const monthly = useMemo(() => {
     const rows = MONTHS.map((m) => ({ month: m, income: 0, expense: 0, profit: 0 }));
 
@@ -177,26 +184,21 @@ function Dashboard() {
     return rows;
   }, [data.cheques, data.contracts, data.expenses, year]);
 
-  const { occupiedCount, vacant, totalUnits, activeLeaseCount, missingUnit } = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+  const { occupiedCount, vacant, totalUnits, coveringToday, activeLeaseCount } = useMemo(() => {
+    const statusActive = data.contracts.filter((c) => {
+      const s = (c.status || "Active").trim();
+      return s === "Active";
+    });
 
-    const activeLeases = data.contracts.filter((c) => {
-      const status = (c.status || "Active").trim();
-      if (status === "Draft") return false;
-      if (status !== "Active") return false;
-      if (c.startDate && c.startDate > todayStr) return false;
-      // still within original end (and not past break if endedAt set by mistake on Active)
-      const end = c.endedAt && c.endedAt < (c.endDate || c.endedAt) ? c.endedAt : c.endDate;
-      if (end && end < todayStr) return false;
+    const covering = statusActive.filter((c) => {
+      if (c.startDate && c.startDate > today) return false;
+      if (c.endDate && c.endDate < today) return false;
       return true;
     });
 
-    const occupiedUnitIds = new Set<string>();
-    let missingUnit = 0;
-    activeLeases.forEach((c) => {
-      if (c.unitId) occupiedUnitIds.add(c.unitId);
-      else missingUnit += 1;
-    });
+    const occupiedUnitIds = new Set(
+      covering.map((c) => c.unitId).filter(Boolean) as string[],
+    );
 
     const vacant = data.units.filter((u) => !occupiedUnitIds.has(u.id));
 
@@ -204,12 +206,11 @@ function Dashboard() {
       occupiedCount: occupiedUnitIds.size,
       vacant,
       totalUnits: data.units.length,
-      activeLeaseCount: activeLeases.length,
-      missingUnit,
+      coveringToday: covering.length,
+      activeLeaseCount: statusActive.length,
     };
-  }, [data.contracts, data.units]);
+  }, [data.contracts, data.units, today]);
 
-  /** Avg yearly rental card = Income(Y) − Income(Y-1), % of prior income */
   const yoyChange = income - incomePrev;
   const hikePct =
     incomePrev > 0 ? Math.round((yoyChange / incomePrev) * 1000) / 10 : null;
@@ -221,7 +222,6 @@ function Dashboard() {
         ? `${hikePct}% ⬆️ vs ${year - 1}`
         : `${Math.abs(hikePct)}% ⬇️ vs ${year - 1}`;
 
-  /** Pie: previous / current / next year */
   const pieData = useMemo(() => {
     const years = [year - 1, year, year + 1];
     return years.map((y) => {
@@ -265,6 +265,20 @@ function Dashboard() {
     [data.contracts],
   );
 
+  const expiredContracts = useMemo(
+    () =>
+      data.contracts
+        .filter((c) => {
+          if ((c.status || "Active") === "Draft") return false;
+          const end = effectiveEnd(c);
+          if (!end || end > today) return false;
+          return true;
+        })
+        .sort((a, b) => effectiveEnd(b).localeCompare(effectiveEnd(a)))
+        .slice(0, 10),
+    [data.contracts, today],
+  );
+
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "Unknown";
 
   return (
@@ -273,9 +287,9 @@ function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
-          label="Income"
+          label="Income (accrual)"
           value={currency(income)}
-          hint=""
+          hint="This year rent share (incl. prior deferred)"
           icon={ArrowUpRight}
           tone="positive"
         />
@@ -283,14 +297,18 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint=""
+          hint={
+            otherIncome > 0
+              ? `Includes penalty/extra ${currency(otherIncome)}`
+              : undefined
+          }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
         />
         <Stat
           label="Occupancy"
           value={`${occupiedCount}/${totalUnits}`}
-          hint={`${vacant.length} vacant unit(s)`}
+          hint={`${coveringToday} lease(s) covering today · ${activeLeaseCount} status Active · ${vacant.length} vacant`}
           icon={DoorOpen}
           tone={occupiedCount > 0 ? "positive" : "default"}
         />
@@ -410,7 +428,7 @@ function Dashboard() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Upcoming PDCs (120 days)</CardTitle>
@@ -472,6 +490,48 @@ function Dashboard() {
                   </div>
                 );
               })
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Expired contracts</CardTitle>
+            <CalendarClock className="size-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {expiredContracts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No expired contracts.</p>
+            ) : (
+              expiredContracts.map((c) => {
+                const unit = data.units.find((u) => u.id === c.unitId);
+                const end = effectiveEnd(c);
+                const overdue = daysUntil(end);
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {c.leaseNo || "—"} · {tenantName(c.tenantId)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Flat {unit?.flatNo || "—"} · ended {fmtDate(end)} · {c.status || "Active"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{currency(c.rent)}</p>
+                      <p className="text-xs text-red-600">
+                        {overdue === 0 ? "Ends today" : `${Math.abs(overdue)}d overdue`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            {expiredContracts.length >= 10 && (
+              <p className="text-xs text-muted-foreground">Showing latest 10 · see Reports</p>
             )}
           </CardContent>
         </Card>
