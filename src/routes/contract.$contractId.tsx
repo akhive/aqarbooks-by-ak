@@ -198,8 +198,10 @@ function ContractDetailPage() {
 
   const rentBreakdown = useMemo(() => {
     if (!contract) return { leasedDays: 0, revenue: 0, deferred: 0, rentAmt: 0 };
+
     const rentAmt =
       contract.actualRent && contract.actualRent > 0 ? contract.actualRent : contract.rent;
+
     const endDt =
       (contract.status === "Broken" ||
         contract.status === "Cancelled" ||
@@ -213,7 +215,9 @@ function ContractDetailPage() {
     const leasedDays =
       end >= start ? Math.round((end.getTime() - start.getTime()) / 86400000) + 1 : 0;
     const daily = leasedDays > 0 ? rentAmt / leasedDays : 0;
-    const thisYear = new Date().getFullYear();
+
+    // First calendar year of the lease (not system year)
+    const startYear = start.getFullYear();
     let revenue = 0;
     let deferred = 0;
 
@@ -226,14 +230,13 @@ function ContractDetailPage() {
         if (to < from) continue;
         const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
         const amt = Math.round(daily * days);
-        if (y === thisYear) revenue += amt;
+        if (y === startYear) revenue += amt;
         else deferred += amt;
       }
     }
 
     return { leasedDays, revenue, deferred, rentAmt };
   }, [contract]);
-
   const printSettlementNow = () => {
     setPrintMode(true);
     setTimeout(() => {
