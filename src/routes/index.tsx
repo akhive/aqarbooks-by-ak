@@ -269,12 +269,11 @@ function Dashboard() {
     () =>
       data.contracts
         .filter((c) => {
-          if ((c.status || "Active") === "Draft") return false;
-          const end = effectiveEnd(c);
-          if (!end || end > today) return false;
+          if ((c.status || "Active") !== "Active") return false;
+          if (!c.endDate || c.endDate > today) return false;
           return true;
         })
-        .sort((a, b) => effectiveEnd(b).localeCompare(effectiveEnd(a)))
+        .sort((a, b) => (b.endDate || "").localeCompare(a.endDate || ""))
         .slice(0, 10),
     [data.contracts, today],
   );
