@@ -883,9 +883,6 @@ function ReportsPage() {
               <div>
                 <CardTitle className="text-base">Expired contracts</CardTitle>
                 <CardDescription>
-                  Status Active · period ended on or before today · {expired.length}
-                  <span className="block text-xs">
-                    Broken / Cancelled / Ended are not listed here — see Status on the lease
                   </span>
                 </CardDescription>
               </div>
