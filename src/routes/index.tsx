@@ -333,7 +333,7 @@ function Dashboard() {
                     borderRadius: 12,
                     border: "1px solid var(--color-border)",
                     background: "var(--color-card)",
-                    fontSize: 08,
+                    fontSize: 8,
                   }}
                 />
                 <Area
