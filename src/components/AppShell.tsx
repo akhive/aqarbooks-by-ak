@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../supabase";
 import { Button } from "@/components/ui/button";
+import { DataAssistant } from "@/components/DataAssistant";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -33,12 +34,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
 
-  // Close menu when route changes
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  // Close on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -54,7 +53,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top bar — only logo + menu button */}
       <header className="sticky top-0 z-40 border-b border-border bg-card/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
@@ -84,7 +82,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Dark overlay when menu is open */}
       {open && (
         <button
           type="button"
@@ -94,7 +91,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* Side menu (hidden by default) */}
       <aside
         className={`fixed top-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-card shadow-xl transition-transform duration-200 ${
           open ? "translate-x-0" : "-translate-x-full"
@@ -154,6 +150,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+
+      {/* Data assistant — all pages inside AppShell */}
+      <DataAssistant />
     </div>
   );
 }
