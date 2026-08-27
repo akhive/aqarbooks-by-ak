@@ -110,6 +110,7 @@ function ReportsPage() {
   const [incomeSort, setIncomeSort] = useState<"asc" | "desc">("asc");
   const [pdcSort, setPdcSort] = useState<"asc" | "desc">("asc");
   const [depositSort, setDepositSort] = useState<"asc" | "desc">("asc");
+  const [includeExpiredInRenewals, setIncludeExpiredInRenewals] = useState(false);
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
   const unitLabel = (id: string) => {
@@ -279,36 +280,51 @@ function ReportsPage() {
     return { income, expense, profit: income - expense };
   }, [yearly]);
 
-  const renewals = useMemo(
+  /** Upcoming renewals: Active, end in 0–120 days. Optional: also Active + end ≤ today */
+  const renewals = useMemo(() => {
+    const rows = data.contracts.filter((c) => {
+      if ((c.status || "Active") !== "Active") return false;
+      if (!c.endDate) return false;
+      if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
+      if (from && c.endDate < from) return false;
+      if (to && c.endDate > to) return false;
+
+      const d = daysUntil(c.endDate);
+      const isUpcoming = d >= 0 && d <= 120;
+      const isExpired = c.endDate <= today;
+
+      if (includeExpiredInRenewals) {
+        return isUpcoming || isExpired;
+      }
+      return isUpcoming;
+    });
+
+    return [...rows].sort((a, b) => a.endDate.localeCompare(b.endDate));
+  }, [
+    data.contracts,
+    data.tenants,
+    data.units,
+    from,
+    to,
+    tenantSearch,
+    flatSearch,
+    today,
+    includeExpiredInRenewals,
+  ]);
+
+  /** Expired tab: Active only + end ≤ today (not Broken/Cancelled/Ended) */
+  const expired = useMemo(
     () =>
       data.contracts
         .filter((c) => {
           if ((c.status || "Active") !== "Active") return false;
-          const d = daysUntil(c.endDate);
-          if (d < 0 || d > 120) return false;
+          if (!c.endDate || c.endDate > today) return false;
           if (from && c.endDate < from) return false;
           if (to && c.endDate > to) return false;
           if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
           return true;
         })
-        .sort((a, b) => a.endDate.localeCompare(b.endDate)),
-    [data.contracts, data.tenants, data.units, from, to, tenantSearch, flatSearch],
-  );
-
-  /** Ended today or earlier (by contract end date) */
-  const expired = useMemo(
-    () =>
-      data.contracts
-        .filter((c) => {
-          if ((c.status || "Active") === "Draft") return false;
-          const end = effectiveEnd(c);
-          if (!end || end > today) return false;
-          if (from && end < from) return false;
-          if (to && end > to) return false;
-          if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
-          return true;
-        })
-        .sort((a, b) => effectiveEnd(b).localeCompare(effectiveEnd(a))),
+        .sort((a, b) => (b.endDate || "").localeCompare(a.endDate || "")),
     [data.contracts, data.tenants, data.units, today, from, to, tenantSearch, flatSearch],
   );
 
@@ -476,7 +492,6 @@ function ReportsPage() {
           <TabsTrigger value="other-income">Other incomes</TabsTrigger>
         </TabsList>
 
-        {/* LEASE */}
         <TabsContent value="lease">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -551,7 +566,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* INCOME */}
         <TabsContent value="income">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -565,14 +579,7 @@ function ReportsPage() {
                 onExport={() =>
                   exportCSV(
                     `income_breakdown.csv`,
-                    [
-                      "Lease No",
-                      "Tenant",
-                      "Actual Rent",
-                      String(prevYear),
-                      String(year),
-                      "Deferred",
-                    ],
+                    ["Lease No", "Tenant", "Actual Rent", String(prevYear), String(year), "Deferred"],
                     incomeRows.map((r) => [
                       r.leaseNo,
                       tenantName(r.tenantId),
@@ -641,7 +648,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* PDC */}
         <TabsContent value="pdc">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -710,7 +716,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* PROFIT */}
         <TabsContent value="profit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -767,27 +772,45 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* RENEWALS */}
+        {/* RENEWALS + include expired checkbox */}
         <TabsContent value="renewal">
           <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Contract renewals</CardTitle>
-                <CardDescription>Ending within 120 days · {renewals.length}</CardDescription>
+                <CardDescription>
+                  Active · ending within 120 days
+                  {includeExpiredInRenewals ? " + expired (Active, period ended)" : ""} ·{" "}
+                  {renewals.length}
+                </CardDescription>
+                <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm no-print">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border"
+                    checked={includeExpiredInRenewals}
+                    onChange={(e) => setIncludeExpiredInRenewals(e.target.checked)}
+                  />
+                  Include expired contracts (Active, end date ≤ today)
+                </label>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `contract_renewals.csv`,
-                    ["Lease No", "Tenant", "Unit", "End Date", "Rent", "Days Left"],
-                    renewals.map((c) => [
-                      c.leaseNo,
-                      tenantName(c.tenantId),
-                      unitLabel(c.unitId),
-                      c.endDate,
-                      c.rent,
-                      daysUntil(c.endDate),
-                    ]),
+                    ["Lease No", "Tenant", "Unit", "End Date", "Rent", "Days Left", "Note"],
+                    renewals.map((c) => {
+                      const d = daysUntil(c.endDate);
+                      const note = d < 0 ? "Expired" : "Upcoming";
+                      return [
+                        c.leaseNo,
+                        tenantName(c.tenantId),
+                        unitLabel(c.unitId),
+                        c.endDate,
+                        c.rent,
+                        d,
+                        note,
+                      ];
+                    }),
                   )
                 }
               />
@@ -802,51 +825,83 @@ function ReportsPage() {
                     <TableHead>End</TableHead>
                     <TableHead className="text-right">Rent</TableHead>
                     <TableHead className="text-right">Days left</TableHead>
+                    <TableHead>Note</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {renewals.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell>
-                        <LeaseLink id={c.id} leaseNo={c.leaseNo} />
+                  {renewals.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                        No matching contracts.
                       </TableCell>
-                      <TableCell>{tenantName(c.tenantId)}</TableCell>
-                      <TableCell>{unitLabel(c.unitId)}</TableCell>
-                      <TableCell>{fmtDate(c.endDate)}</TableCell>
-                      <TableCell className="text-right">{currency(c.rent)}</TableCell>
-                      <TableCell className="text-right">{daysUntil(c.endDate)} days</TableCell>
                     </TableRow>
-                  ))}
+                  )}
+                  {renewals.map((c) => {
+                    const d = daysUntil(c.endDate);
+                    const expiredRow = d < 0 || c.endDate <= today;
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell>
+                          <LeaseLink id={c.id} leaseNo={c.leaseNo} />
+                        </TableCell>
+                        <TableCell>{tenantName(c.tenantId)}</TableCell>
+                        <TableCell>{unitLabel(c.unitId)}</TableCell>
+                        <TableCell>{fmtDate(c.endDate)}</TableCell>
+                        <TableCell className="text-right">{currency(c.rent)}</TableCell>
+                        <TableCell
+                          className={`text-right ${expiredRow ? "text-red-600" : ""}`}
+                        >
+                          {expiredRow
+                            ? d === 0
+                              ? "Ends today"
+                              : `${Math.abs(d)}d overdue`
+                            : `${d} days`}
+                        </TableCell>
+                        <TableCell>
+                          {expiredRow ? (
+                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-700">
+                              Expired
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+                              Upcoming
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* EXPIRED */}
         <TabsContent value="expired">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Expired contracts</CardTitle>
                 <CardDescription>
-                  Period ended on or before today · {expired.length}
+                  Status Active · period ended on or before today · {expired.length}
+                  <span className="block text-xs">
+                    Broken / Cancelled / Ended are not listed here — see Status on the lease
+                  </span>
                 </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
                   exportCSV(
                     `expired_contracts.csv`,
-                    ["Lease No", "Tenant", "Unit", "Start", "End", "Status", "Rent", "Days overdue"],
+                    ["Lease No", "Tenant", "Unit", "Start", "End", "Rent", "Days overdue"],
                     expired.map((c) => [
                       c.leaseNo,
                       tenantName(c.tenantId),
                       unitLabel(c.unitId),
                       c.startDate,
-                      effectiveEnd(c),
-                      c.status || "Active",
+                      c.endDate,
                       c.rent,
-                      Math.abs(Math.min(0, daysUntil(effectiveEnd(c)))),
+                      Math.abs(Math.min(0, daysUntil(c.endDate))),
                     ]),
                   )
                 }
@@ -870,13 +925,12 @@ function ReportsPage() {
                   {expired.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                        No expired contracts.
+                        No expired Active contracts.
                       </TableCell>
                     </TableRow>
                   )}
                   {expired.map((c) => {
-                    const end = effectiveEnd(c);
-                    const overdue = daysUntil(end);
+                    const overdue = daysUntil(c.endDate);
                     return (
                       <TableRow key={c.id}>
                         <TableCell>
@@ -885,8 +939,8 @@ function ReportsPage() {
                         <TableCell>{tenantName(c.tenantId)}</TableCell>
                         <TableCell>{unitLabel(c.unitId)}</TableCell>
                         <TableCell>{fmtDate(c.startDate)}</TableCell>
-                        <TableCell>{fmtDate(end)}</TableCell>
-                        <TableCell>{c.status || "Active"}</TableCell>
+                        <TableCell>{fmtDate(c.endDate)}</TableCell>
+                        <TableCell>Active</TableCell>
                         <TableCell className="text-right">{currency(c.rent)}</TableCell>
                         <TableCell className="text-right text-red-600">
                           {overdue === 0 ? "Ends today" : `${Math.abs(overdue)} days`}
@@ -900,7 +954,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* VACANT */}
         <TabsContent value="vacant">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -943,7 +996,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* DEPOSIT */}
         <TabsContent value="deposit">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -1030,7 +1082,6 @@ function ReportsPage() {
           </Card>
         </TabsContent>
 
-        {/* OTHER INCOME */}
         <TabsContent value="other-income">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
