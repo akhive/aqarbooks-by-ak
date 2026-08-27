@@ -106,7 +106,9 @@ function Stat({
       <CardContent className="flex items-start justify-between gap-3 pb-5 pt-5">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className={`mt-1 truncate text-xl font-semibold tracking-tight ${valueClass}`}>{value}</p>
+          <p className={`mt-1 truncate text-xl font-semibold tracking-tight ${valueClass}`}>
+            {value}
+          </p>
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
         <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconWrap}`}>
@@ -185,10 +187,9 @@ function Dashboard() {
   }, [data.cheques, data.contracts, data.expenses, year]);
 
   const { occupiedCount, vacant, totalUnits, coveringToday, activeLeaseCount } = useMemo(() => {
-    const statusActive = data.contracts.filter((c) => {
-      const s = (c.status || "Active").trim();
-      return s === "Active";
-    });
+    const statusActive = data.contracts.filter(
+      (c) => (c.status || "Active").trim() === "Active",
+    );
 
     const covering = statusActive.filter((c) => {
       if (c.startDate && c.startDate > today) return false;
@@ -200,11 +201,11 @@ function Dashboard() {
       covering.map((c) => c.unitId).filter(Boolean) as string[],
     );
 
-    const vacant = data.units.filter((u) => !occupiedUnitIds.has(u.id));
+    const vacantList = data.units.filter((u) => !occupiedUnitIds.has(u.id));
 
     return {
       occupiedCount: occupiedUnitIds.size,
-      vacant,
+      vacant: vacantList,
       totalUnits: data.units.length,
       coveringToday: covering.length,
       activeLeaseCount: statusActive.length,
@@ -245,8 +246,7 @@ function Dashboard() {
           const d = daysUntil(c.chequeDate);
           return d >= -3 && d <= 120;
         })
-        .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate))
-        .slice(0, 10),
+        .sort((a, b) => a.chequeDate.localeCompare(b.chequeDate)),
     [data.cheques, data.contracts],
   );
 
@@ -254,14 +254,12 @@ function Dashboard() {
     () =>
       data.contracts
         .filter((c) => {
-          if ((c.status || "Active") === "Draft") return false;
           if ((c.status || "Active") !== "Active") return false;
           if (!c.endDate) return false;
           const d = daysUntil(c.endDate);
           return d >= 0 && d <= 120;
         })
-        .sort((a, b) => a.endDate.localeCompare(b.endDate))
-        .slice(0, 10),
+        .sort((a, b) => a.endDate.localeCompare(b.endDate)),
     [data.contracts],
   );
 
@@ -273,8 +271,7 @@ function Dashboard() {
           if (!c.endDate || c.endDate > today) return false;
           return true;
         })
-        .sort((a, b) => (b.endDate || "").localeCompare(a.endDate || ""))
-        .slice(0, 10),
+        .sort((a, b) => (b.endDate || "").localeCompare(a.endDate || "")),
     [data.contracts, today],
   );
 
@@ -361,8 +358,7 @@ function Dashboard() {
                   fill="url(#profitFill)"
                   fillOpacity={1}
                   name="Received − expense"
-                  isAnimationActive={true}
-                  animationBegin={0}
+                  isAnimationActive
                   animationDuration={1200}
                   animationEasing="ease-out"
                 />
@@ -391,8 +387,7 @@ function Dashboard() {
                     outerRadius={70}
                     paddingAngle={2}
                     label={false}
-                    isAnimationActive={true}
-                    animationBegin={200}
+                    isAnimationActive
                     animationDuration={1000}
                     animationEasing="ease-out"
                   >
@@ -427,28 +422,29 @@ function Dashboard() {
         </Card>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
+      {/* Four equal cards — fixed height + scroll */}
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="flex flex-col border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base">Upcoming PDCs (120 days)</CardTitle>
-            <CalendarClock className="size-4 text-muted-foreground" />
+            <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {upcoming.length === 0 ? (
               <p className="text-sm text-muted-foreground">No PDCs in the next 120 days.</p>
             ) : (
               upcoming.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                 >
-                  <div>
-                    <p className="text-sm font-medium">{tenantName(c.tenantId)}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{tenantName(c.tenantId)}</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       #{c.chequeNo} · {c.bank} · {fmtDate(c.chequeDate)}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="shrink-0 text-right">
                     <p className="text-sm font-semibold">{currency(c.amount)}</p>
                     <p className="text-xs text-muted-foreground">in {daysUntil(c.chequeDate)}d</p>
                   </div>
@@ -458,12 +454,12 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
+        <Card className="flex flex-col border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base">Upcoming renewals</CardTitle>
-            <CalendarClock className="size-4 text-muted-foreground" />
+            <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {upcomingRenewals.length === 0 ? (
               <p className="text-sm text-muted-foreground">No renewals in the next 120 days.</p>
             ) : (
@@ -472,17 +468,17 @@ function Dashboard() {
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                   >
-                    <div>
-                      <p className="text-sm font-medium">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
                         {c.leaseNo || "—"} · {tenantName(c.tenantId)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="truncate text-xs text-muted-foreground">
                         Flat {unit?.flatNo || "—"} · ends {fmtDate(c.endDate)}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <p className="text-sm font-semibold">{currency(c.rent)}</p>
                       <p className="text-xs text-muted-foreground">in {daysUntil(c.endDate)}d</p>
                     </div>
@@ -493,33 +489,32 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
+        <Card className="flex flex-col border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base">Expired contracts</CardTitle>
-            <CalendarClock className="size-4 text-muted-foreground" />
+            <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {expiredContracts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No expired contracts.</p>
             ) : (
               expiredContracts.map((c) => {
                 const unit = data.units.find((u) => u.id === c.unitId);
-                const end = effectiveEnd(c);
-                const overdue = daysUntil(end);
+                const overdue = daysUntil(c.endDate);
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                   >
-                    <div>
-                      <p className="text-sm font-medium">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
                         {c.leaseNo || "—"} · {tenantName(c.tenantId)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Flat {unit?.flatNo || "—"} · ended {fmtDate(end)} · {c.status || "Active"}
+                      <p className="truncate text-xs text-muted-foreground">
+                        Flat {unit?.flatNo || "—"} · ended {fmtDate(c.endDate)}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <p className="text-sm font-semibold">{currency(c.rent)}</p>
                       <p className="text-xs text-red-600">
                         {overdue === 0 ? "Ends today" : `${Math.abs(overdue)}d overdue`}
@@ -529,38 +524,34 @@ function Dashboard() {
                 );
               })
             )}
-            {expiredContracts.length >= 10 && (
-              <p className="text-xs text-muted-foreground">Showing latest 10 · see Reports</p>
-            )}
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
+        <Card className="flex flex-col border-border/80 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base">Vacant units</CardTitle>
-            <DoorOpen className="size-4 text-muted-foreground" />
+            <DoorOpen className="size-4 shrink-0 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {vacant.length === 0 ? (
               <p className="text-sm text-muted-foreground">All units are occupied.</p>
             ) : (
-              vacant.slice(0, 12).map((u) => (
+              vacant.map((u) => (
                 <div
                   key={u.id}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                 >
-                  <div>
-                    <p className="text-sm font-medium">Flat {u.flatNo}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">Flat {u.flatNo}</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       {u.building || "—"} · {u.bedroomType || "—"}
                     </p>
                   </div>
-                  <p className="text-sm text-muted-foreground">{currency(u.marketRent)}/yr</p>
+                  <p className="shrink-0 text-sm text-muted-foreground">
+                    {currency(u.marketRent)}/yr
+                  </p>
                 </div>
               ))
-            )}
-            {vacant.length > 12 && (
-              <p className="text-xs text-muted-foreground">+{vacant.length - 12} more</p>
             )}
           </CardContent>
         </Card>
