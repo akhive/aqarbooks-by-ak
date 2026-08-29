@@ -1,631 +1,114 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo } from "react";
+import { ArrowLeft } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import {
-  calcRevenue,
-  currency,
-  fmtDate,
-  useStore,
-  type ContractStatus,
-} from "@/lib/store";
-import { supabase } from "../supabase";
+import { currency, fmtDate, useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/contract/$contractId")({
-  component: ContractDetailPage,
+export const Route = createFileRoute("/units/$unitId")({
+  head: () => ({
+    meta: [{ title: "Lease history — Aqar Books" }],
+  }),
+  component: UnitLeaseHistoryPage,
 });
 
-function addMonths(iso: string, months: number) {
-  const d = new Date(iso + "T12:00:00");
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
-}
+function UnitLeaseHistoryPage() {
+  const { unitId } = Route.useParams();
+  const { data } = useStore();
 
-function addDays(iso: string, days: number) {
-  const d = new Date(iso + "T12:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+  const unit = data.units.find((u) => u.id === unitId);
 
-function toYmd(d: Date) {
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-  ].join("-");
-}
+  const history = useMemo(() => {
+    return data.contracts
+      .filter((c) => c.unitId === unitId && (c.status || "Active") !== "Draft")
+      .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+  }, [data.contracts, unitId]);
 
-function ContractDetailPage() {
-  const { contractId } = Route.useParams();
-  const navigate = useNavigate();
-  const { data, loading, refresh, addCheque, deleteCheque, updateContract, addContract } =
-    useStore();
+  const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
-  const contract = data.contracts.find((c) => c.id === contractId);
-  const tenant = data.tenants.find((t) => t.id === contract?.tenantId);
-  const unit = data.units.find((u) => u.id === contract?.unitId);
-
-  const cheques = useMemo(() => {
-    if (!contract) return [];
-    return data.cheques
-      .filter(
-        (c) =>
-          c.contractId === contractId ||
-          (!c.contractId && c.tenantId === contract.tenantId),
-      )
-      .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
-  }, [data.cheques, contractId, contract]);
-
-  const [splitOpen, setSplitOpen] = useState(false);
-  const [splitCount, setSplitCount] = useState(4);
-  const [firstDate, setFirstDate] = useState("");
-  const [actionOpen, setActionOpen] = useState(false);
-  const [actionType, setActionType] = useState<ContractStatus>("Ended");
-  const [actionDate, setActionDate] = useState(new Date().toISOString().slice(0, 10));
-  const [actionNotes, setActionNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  // —— Renew ——
-  const [renewOpen, setRenewOpen] = useState(false);
-  const [renewLeaseNo, setRenewLeaseNo] = useState("");
-  const [renewStart, setRenewStart] = useState("");
-  const [renewEnd, setRenewEnd] = useState("");
-  const [renewRent, setRenewRent] = useState(0);
-  const [renewDeposit, setRenewDeposit] = useState(0);
-
-  const openRenew = () => {
-    if (!contract) return;
-    const newStart = addDays(contract.endDate, 1);
-    const oldEnd = new Date(contract.endDate + "T12:00:00");
-    oldEnd.setFullYear(oldEnd.getFullYear() + 1);
-    const newEnd = toYmd(oldEnd);
-
-    const nums = data.contracts
-      .map((c) => {
-        const m = (c.leaseNo || "").match(/(\d+)/);
-        return m ? parseInt(m[1], 10) : 0;
-      })
-      .filter((n) => n > 0);
-    const next = String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0");
-
-    setRenewLeaseNo(next);
-    setRenewStart(newStart);
-    setRenewEnd(newEnd);
-    setRenewRent(0);
-    setRenewDeposit(contract.depositAmount || 0);
-    setRenewOpen(true);
-  };
-
-  const confirmRenew = async () => {
-    if (!contract) return;
-    if (!renewRent || renewRent <= 0) {
-      toast.error("Enter renewal rent");
-      return;
-    }
-    if (!renewStart || !renewEnd) {
-      toast.error("Start and end dates required");
-      return;
-    }
-    setSaving(true);
-    try {
-      // Prefer store helper if you have addContract; else Supabase insert
-      if (typeof addContract === "function") {
-        const created = await addContract({
-          leaseNo: renewLeaseNo,
-          tenantId: contract.tenantId,
-          unitId: contract.unitId,
-          startDate: renewStart,
-          endDate: renewEnd,
-          rent: renewRent,
-          previousRent: contract.rent,
-          bedroomType: contract.bedroomType || unit?.bedroomType || "",
-          status: "Draft",
-          depositAmount: renewDeposit || 0,
-        } as any);
-        toast.success("Draft renewal created");
-        setRenewOpen(false);
-        await refresh();
-        if (created?.id) {
-          navigate({ to: "/contract/$contractId", params: { contractId: created.id } });
-        }
-      } else {
-        const { data: row, error } = await supabase
-          .from("contracts")
-          .insert({
-            lease_no: renewLeaseNo,
-            tenant_id: contract.tenantId,
-            unit_id: contract.unitId,
-            start_date: renewStart,
-            end_date: renewEnd,
-            rent: renewRent,
-            previous_rent: contract.rent,
-            bedroom_type: contract.bedroomType || unit?.bedroomType || null,
-            status: "Draft",
-            deposit_amount: renewDeposit || 0,
-          })
-          .select("id")
-          .single();
-        if (error) throw error;
-        toast.success("Draft renewal created");
-        setRenewOpen(false);
-        await refresh();
-        if (row?.id) {
-          navigate({ to: "/contract/$contractId", params: { contractId: row.id } });
-        }
-      }
-    } catch (e: any) {
-      toast.error(e.message || "Renew failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
+  if (!unit) {
     return (
       <AppShell>
-        <p className="text-sm text-muted-foreground">Loading contract...</p>
-      </AppShell>
-    );
-  }
-
-  if (!contract) {
-    return (
-      <AppShell>
-        <p className="text-muted-foreground">Contract not found.</p>
-        <Button asChild className="mt-4" variant="outline">
-          <Link to="/contracts">Back to Contracts</Link>
+        <PageHeader title="Unit not found" description={`ID: ${unitId}`} />
+        <Button asChild variant="outline">
+          <Link to="/units">Back to units</Link>
         </Button>
       </AppShell>
     );
   }
 
-  const rev = calcRevenue(contract.startDate, contract.endDate, contract.rent);
-  const chequeTotal = cheques.reduce((s, c) => s + c.amount, 0);
-
-  const generateSplit = async () => {
-    if (!firstDate) {
-      toast.error("Select first cheque date");
-      return;
-    }
-    setSaving(true);
-    try {
-      const each = Math.round((contract.rent / splitCount) * 100) / 100;
-      let remaining = contract.rent;
-      for (let i = 0; i < splitCount; i++) {
-        const amount = i === splitCount - 1 ? Math.round(remaining * 100) / 100 : each;
-        remaining -= amount;
-        await addCheque({
-          tenantId: contract.tenantId,
-          contractId: contract.id,
-          chequeDate: addMonths(firstDate, i),
-          chequeNo: `${contract.leaseNo || "L"}-${i + 1}`,
-          bank: "",
-          amount,
-          status: "PDC",
-          reconciled: false,
-        });
-      }
-      toast.success(`${splitCount} cheques created`);
-      setSplitOpen(false);
-      await refresh();
-    } catch (e: any) {
-      toast.error(e.message || "Failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const applyAction = async () => {
-    setSaving(true);
-    try {
-      await updateContract(contract.id, {
-        ...contract,
-        status: actionType,
-        endedAt: actionDate,
-        notes: actionNotes || contract.notes,
-      });
-      await supabase
-        .from("contracts")
-        .update({
-          status: actionType,
-          ended_at: actionDate,
-          notes: actionNotes || null,
-        })
-        .eq("id", contract.id);
-      toast.success(`Contract marked as ${actionType}`);
-      setActionOpen(false);
-      await refresh();
-    } catch (e: any) {
-      toast.error(e.message || "Failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const statusColor =
-    contract.status === "Active"
-      ? "bg-emerald-100 text-emerald-800"
-      : contract.status === "Draft"
-        ? "bg-amber-100 text-amber-800"
-        : contract.status === "Ended"
-          ? "bg-slate-100 text-slate-800"
-          : "bg-red-100 text-red-800";
-
-  const unitLink = contract.unitId ? (
-    <Link
-      to="/units/$unitId"
-      params={{ unitId: contract.unitId }}
-      className="font-medium text-primary underline-offset-2 hover:underline"
-    >
-      {unit?.flatNo || "—"}
-    </Link>
-  ) : (
-    <span className="font-medium">—</span>
-  );
-
   return (
     <AppShell>
       <div className="mb-4">
-        <Link
-          to="/contracts"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to Contracts
-        </Link>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/units">
+            <ArrowLeft className="mr-2 size-4" />
+            Units
+          </Link>
+        </Button>
       </div>
 
       <PageHeader
-        title={`Lease ${contract.leaseNo || "—"}`}
-        description={`${tenant?.name || "—"} · Unit ${unit?.flatNo || "—"}`}
-        action={
-          <div className="flex flex-wrap gap-2">
-            {(contract.status || "Active") === "Active" && (
-              <Button variant="default" onClick={openRenew}>
-                Renew
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => setSplitOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Split PDCs
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setActionType("Ended");
-                setActionOpen(true);
-              }}
-            >
-              End / Vacate
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setActionType("Cancelled");
-                setActionOpen(true);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setActionType("Broken");
-                setActionOpen(true);
-              }}
-            >
-              Break Contract
-            </Button>
-          </div>
+        title={`Lease history — Flat ${unit.flatNo}`}
+        description={
+          [unit.building, unit.bedroomType].filter(Boolean).join(" · ") ||
+          "All contracts for this unit"
         }
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Status</p>
-            <span className={`mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusColor}`}>
-              {contract.status || "Active"}
-            </span>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Period</p>
-            <p className="font-medium">
-              {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Rent</p>
-            <p className="text-lg font-semibold">{currency(contract.rent)}</p>
-            <p className="text-xs text-muted-foreground">Prev {currency(contract.previousRent)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Revenue / Deferred</p>
-            <p className="font-medium text-emerald-600">{currency(rev.currentYear)}</p>
-            <p className="text-sm text-amber-600">{currency(rev.deferred)} deferred</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Lease details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Lease No</span>
-              <span className="font-medium">{contract.leaseNo || "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tenant</span>
-              <span className="font-medium">{tenant?.name || "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Mobile</span>
-              <span>{tenant?.mobile || "—"}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Unit</span>
-              {unitLink}
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Building</span>
-              <span>{unit?.building || "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Bedroom Type</span>
-              <span>{contract.bedroomType || unit?.bedroomType || "—"}</span>
-            </div>
-            {contract.endedAt && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Ended / Vacated</span>
-                <span>{fmtDate(contract.endedAt)}</span>
-              </div>
-            )}
-            {contract.notes && (
-              <div>
-                <p className="text-muted-foreground">Notes</p>
-                <p>{contract.notes}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Payment summary</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Lease rent</span>
-              <span className="font-medium">{currency(contract.rent)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Cheques total</span>
-              <span className="font-medium">{currency(chequeTotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Difference</span>
-              <span className={chequeTotal === contract.rent ? "text-emerald-600" : "text-amber-600"}>
-                {currency(contract.rent - chequeTotal)}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Payment schedule (Cheques)</CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setSplitOpen(true)}>
-            Generate split PDCs
-          </Button>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {history.length} lease(s) · Flat {unit.flatNo}
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Previous and current tenants on this unit (newest first). Drafts hidden.
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Cheque No</TableHead>
-                <TableHead>Bank</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Lease No</TableHead>
+                <TableHead>Tenant</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-16" />
+                <TableHead>Start</TableHead>
+                <TableHead>End</TableHead>
+                <TableHead className="text-right">Rent</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {cheques.length === 0 && (
+              {history.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    No cheques yet. Use “Split PDCs” to create them from rent.
+                    No leases linked to this unit yet.
                   </TableCell>
                 </TableRow>
               )}
-              {cheques.map((c) => (
+              {history.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
-                  <TableCell>{c.chequeNo || "—"}</TableCell>
-                  <TableCell>{c.bank || "—"}</TableCell>
-                  <TableCell className="text-right">{currency(c.amount)}</TableCell>
-                  <TableCell>{c.status}</TableCell>
                   <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={async () => {
-                        if (!confirm("Delete this cheque?")) return;
-                        try {
-                          await deleteCheque(c.id);
-                          toast.success("Deleted");
-                        } catch (e: any) {
-                          toast.error(e.message || "Failed");
-                        }
-                      }}
+                    <Link
+                      to="/contract/$contractId"
+                      params={{ contractId: c.id }}
+                      className="font-medium text-primary underline-offset-2 hover:underline"
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                      {c.leaseNo || "—"}
+                    </Link>
                   </TableCell>
+                  <TableCell>{tenantName(c.tenantId)}</TableCell>
+                  <TableCell>{c.status || "Active"}</TableCell>
+                  <TableCell>{fmtDate(c.startDate)}</TableCell>
+                  <TableCell>{fmtDate(c.endedAt || c.endDate)}</TableCell>
+                  <TableCell className="text-right">{currency(c.rent)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
-
-      {/* Renew dialog */}
-      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm renewal</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>New lease no</Label>
-              <Input value={renewLeaseNo} onChange={(e) => setRenewLeaseNo(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Start</Label>
-                <Input type="date" value={renewStart} onChange={(e) => setRenewStart(e.target.value)} />
-              </div>
-              <div>
-                <Label>End</Label>
-                <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
-              </div>
-            </div>
-            <div>
-              <Label>Renewal rent (AED) *</Label>
-              <Input
-                type="number"
-                value={renewRent || ""}
-                onChange={(e) => setRenewRent(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label>Deposit (AED)</Label>
-              <Input
-                type="number"
-                value={renewDeposit || ""}
-                onChange={(e) => setRenewDeposit(Number(e.target.value))}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Creates a <strong>Draft</strong> lease. Submit it when PDCs are ready.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenewOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={confirmRenew} disabled={saving}>
-              {saving ? "Creating..." : "Create draft lease"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Split rent into PDCs</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Number of cheques</Label>
-              <Select value={String(splitCount)} onValueChange={(v) => setSplitCount(Number(v))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 4, 6, 12].map((n) => (
-                    <SelectItem key={n} value={String(n)}>
-                      {n} × ~{currency(Math.round(contract.rent / n))}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>First cheque date</Label>
-              <Input type="date" value={firstDate} onChange={(e) => setFirstDate(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSplitOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={generateSplit} disabled={saving}>
-              {saving ? "Creating..." : "Create cheques"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={actionOpen} onOpenChange={setActionOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {actionType === "Ended"
-                ? "End contract / Vacate unit"
-                : actionType === "Cancelled"
-                  ? "Cancel contract"
-                  : "Break contract"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Effective date</Label>
-              <Input type="date" value={actionDate} onChange={(e) => setActionDate(e.target.value)} />
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Input
-                value={actionNotes}
-                onChange={(e) => setActionNotes(e.target.value)}
-                placeholder="Reason / remarks"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setActionOpen(false)}>
-              Close
-            </Button>
-            <Button
-              variant={actionType === "Broken" ? "destructive" : "default"}
-              onClick={applyAction}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Confirm"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </AppShell>
   );
 }
