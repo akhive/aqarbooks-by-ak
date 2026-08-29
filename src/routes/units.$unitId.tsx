@@ -29,19 +29,20 @@ function UnitDetailPage() {
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
+  const today = new Date().toISOString().slice(0, 10);
   const current = history.find(
     (c) =>
       (c.status || "Active") === "Active" &&
       c.startDate &&
       c.endDate &&
-      c.startDate <= new Date().toISOString().slice(0, 10) &&
-      c.endDate >= new Date().toISOString().slice(0, 10),
+      c.startDate <= today &&
+      c.endDate >= today,
   );
 
   if (!unit) {
     return (
       <AppShell>
-        <PageHeader title="Unit not found" />
+        <PageHeader title="Unit not found" description={`ID: ${unitId}`} />
         <Button asChild variant="outline">
           <Link to="/units">Back to units</Link>
         </Button>
@@ -101,7 +102,7 @@ function UnitDetailPage() {
                 All contracts for Flat {unit.flatNo}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Includes every tenant who occupied this unit (any year). Newest first.
+                Every tenant who occupied this unit. Newest first.
               </p>
             </CardHeader>
             <CardContent className="p-0">
