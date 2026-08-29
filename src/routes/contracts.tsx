@@ -383,17 +383,13 @@ function ContractsPage() {
                   </TableCell>
                   <TableCell>{c.tenantName}</TableCell>
                   <TableCell>
-                    {c.unitId ? (
-                      <Link
-                        to="/units/$unitId"
-                        params={{ unitId: c.unitId }}
-                        className="text-primary underline-offset-2 hover:underline"
-                      >
-                        {c.unitLabel}
-                      </Link>
-                    ) : (
-                      c.unitLabel
-                    )}
+                    <Link
+                      to="/contract/$contractId"
+                      params={{ contractId: c.id }}
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                    >
+                      {c.leaseNo || "—"}
+                    </Link>
                   </TableCell>
                   <TableCell>{c.bedroomType || "—"}</TableCell>
                   <TableCell>
