@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { History, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, fmtDate, useStore, type Contract } from "@/lib/store";
+import { calcRevenue, currency, fmtDate, useStore, type Contract } from "@/lib/store";
 
 export const Route = createFileRoute("/contracts")({
   head: () => ({
@@ -32,7 +32,14 @@ export const Route = createFileRoute("/contracts")({
 });
 
 type Form = Omit<Contract, "id">;
-type SortKey = "leaseNo" | "unit" | "period" | "rent";
+type SortKey =
+  | "leaseNo"
+  | "unit"
+  | "period"
+  | "rent"
+  | "previousRent"
+  | "revenue"
+  | "deferred";
 
 const empty: Form = {
   leaseNo: "",
@@ -43,10 +50,6 @@ const empty: Form = {
   rent: 0,
   previousRent: 0,
   bedroomType: "",
-  status: "Active",
-  notes: "",
-  endedAt: "",
-  depositAmount: 0,
 };
 
 function addDays(iso: string, days: number) {
@@ -112,8 +115,9 @@ function ContractsPage() {
   };
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
       setSortKey(key);
       setSortDir("asc");
     }
@@ -135,16 +139,25 @@ function ContractsPage() {
   const rows = useMemo(() => {
     const q = unitSearch.trim().toLowerCase();
 
-    let list = data.contracts.map((c) => ({
-      ...c,
-      unitLabel: unitFlat[c.unitId] || "—",
-      tenantName: tenantMap[c.tenantId] || "—",
-    }));
+    let list = data.contracts.map((c) => {
+      const rev = calcRevenue(c.startDate, c.endDate, c.rent);
+      return {
+        ...c,
+        unitLabel: unitFlat[c.unitId] || "—",
+        tenantName: tenantMap[c.tenantId] || "—",
+        revenue: rev.currentYear,
+        deferred: rev.deferred,
+      };
+    });
 
-    if (q) list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
-    if (tenantFilter !== "all") list = list.filter((c) => c.tenantId === tenantFilter);
+    if (q) {
+      list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
+    }
+    if (tenantFilter !== "all") {
+      list = list.filter((c) => c.tenantId === tenantFilter);
+    }
 
-    return [...list].sort((a, b) => {
+    const sorted = [...list].sort((a, b) => {
       let cmp = 0;
       if (sortKey === "leaseNo") {
         cmp = (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
@@ -154,9 +167,17 @@ function ContractsPage() {
         cmp = (a.startDate || "").localeCompare(b.startDate || "");
       } else if (sortKey === "rent") {
         cmp = (a.rent || 0) - (b.rent || 0);
+      } else if (sortKey === "previousRent") {
+        cmp = (a.previousRent || 0) - (b.previousRent || 0);
+      } else if (sortKey === "revenue") {
+        cmp = (a.revenue || 0) - (b.revenue || 0);
+      } else if (sortKey === "deferred") {
+        cmp = (a.deferred || 0) - (b.deferred || 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
+
+    return sorted;
   }, [data.contracts, unitFlat, tenantMap, sortKey, sortDir, unitSearch, tenantFilter]);
 
   const historyRows = useMemo(() => {
@@ -168,7 +189,7 @@ function ContractsPage() {
 
   const startAdd = () => {
     setEditing(null);
-    setForm({ ...empty, leaseNo: nextLeaseNo(), status: "Active" });
+    setForm({ ...empty, leaseNo: nextLeaseNo() });
     setError("");
     setOpen(true);
   };
@@ -176,7 +197,7 @@ function ContractsPage() {
   const startEdit = (c: Contract) => {
     setEditing(c.id);
     const { id: _id, ...rest } = c;
-    setForm({ ...empty, ...rest });
+    setForm(rest);
     setError("");
     setOpen(true);
   };
@@ -195,10 +216,6 @@ function ContractsPage() {
       endDate: newEnd,
       rent: 0,
       previousRent: c.rent,
-      status: "Active",
-      notes: "",
-      endedAt: "",
-      depositAmount: c.depositAmount || 0,
     });
     setError("");
     setOpen(true);
@@ -249,7 +266,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${rows.length} contract(s) · Click Lease No to open details`}
+        description={`${rows.length} contract(s)`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -258,6 +275,7 @@ function ContractsPage() {
         }
       />
 
+      {/* Filters */}
       <Card className="mb-4">
         <CardContent className="flex flex-wrap items-end gap-4 p-4">
           <div className="w-full max-w-[200px]">
@@ -289,6 +307,7 @@ function ContractsPage() {
                 onFocus={() => setTenantOpen(true)}
               />
             </div>
+
             {tenantOpen && (
               <div className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md">
                 <button
@@ -352,12 +371,20 @@ function ContractsPage() {
                   <SortBtn k="unit" label="Unit" />
                 </TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>
                   <SortBtn k="period" label="Period" />
                 </TableHead>
                 <TableHead>
                   <SortBtn k="rent" label="Rent" />
+                </TableHead>
+                <TableHead>
+                  <SortBtn k="previousRent" label="Previous Rent" />
+                </TableHead>
+                <TableHead>
+                  <SortBtn k="revenue" label="Revenue (This Year)" />
+                </TableHead>
+                <TableHead>
+                  <SortBtn k="deferred" label="Deferred" />
                 </TableHead>
                 <TableHead className="w-36"></TableHead>
               </TableRow>
@@ -365,54 +392,24 @@ function ContractsPage() {
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                     No contracts found.
                   </TableCell>
                 </TableRow>
               )}
               {rows.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      to="/contract/$contractId"
-                      params={{ contractId: c.id }}
-                      className="text-primary hover:underline"
-                    >
-                      {c.leaseNo || "View"}
-                    </Link>
-                  </TableCell>
+                  <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
                   <TableCell>{c.tenantName}</TableCell>
-                  <TableCell>
-                    {c.unitId ? (
-                      <Link
-                        to="/units/$unitId"
-                        params={{ unitId: c.unitId }}
-                        className="text-primary underline-offset-2 hover:underline"
-                      >
-                        {unitFlat[c.unitId] || c.unitLabel || "—"}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
+                  <TableCell>{c.unitLabel}</TableCell>
                   <TableCell>{c.bedroomType || "—"}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        c.status === "Active"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : c.status === "Ended"
-                            ? "bg-slate-100 text-slate-700"
-                            : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {c.status || "Active"}
-                    </span>
-                  </TableCell>
                   <TableCell>
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
+                  <TableCell>{currency(c.previousRent)}</TableCell>
+                  <TableCell className="font-medium text-emerald-600">{currency(c.revenue)}</TableCell>
+                  <TableCell className="text-amber-600">{currency(c.deferred)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button size="icon" variant="ghost" title="Renew" onClick={() => startRenew(c)}>
@@ -441,6 +438,7 @@ function ContractsPage() {
         </CardContent>
       </Card>
 
+      {/* Add / Edit / Renew */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
@@ -536,6 +534,22 @@ function ContractsPage() {
                 <Input type="number" value={form.previousRent || ""} readOnly className="bg-muted" />
               </div>
             </div>
+            {form.startDate && form.endDate && form.rent > 0 && (
+              <div className="space-y-1 rounded-md bg-muted p-3 text-sm">
+                <div className="flex justify-between">
+                  <span>Revenue (This Year)</span>
+                  <strong className="text-emerald-600">
+                    {currency(calcRevenue(form.startDate, form.endDate, form.rent).currentYear)}
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Deferred Revenue</span>
+                  <strong className="text-amber-600">
+                    {currency(calcRevenue(form.startDate, form.endDate, form.rent).deferred)}
+                  </strong>
+                </div>
+              </div>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
@@ -549,6 +563,7 @@ function ContractsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* History */}
       <Dialog open={!!historyTenantId} onOpenChange={(o) => !o && setHistoryTenantId(null)}>
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
@@ -561,30 +576,23 @@ function ContractsPage() {
               <TableRow>
                 <TableHead>Lease No</TableHead>
                 <TableHead>Unit</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>Period</TableHead>
                 <TableHead>Rent</TableHead>
+                <TableHead>Previous</TableHead>
+                <TableHead>Type</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {historyRows.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      to="/contract/$contractId"
-                      params={{ contractId: c.id }}
-                      className="text-primary hover:underline"
-                      onClick={() => setHistoryTenantId(null)}
-                    >
-                      {c.leaseNo || "View"}
-                    </Link>
-                  </TableCell>
+                  <TableCell className="font-medium">{c.leaseNo || "—"}</TableCell>
                   <TableCell>{unitFlat[c.unitId] || "—"}</TableCell>
-                  <TableCell>{c.status || "Active"}</TableCell>
                   <TableCell>
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
+                  <TableCell>{currency(c.previousRent)}</TableCell>
+                  <TableCell>{c.bedroomType || "—"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
