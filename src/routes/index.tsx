@@ -114,7 +114,7 @@ function Stat({
       <CardContent className="flex items-start justify-between gap-3 pb-5 pt-5">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className={`mt-1 truncate text-2xl font-semibold tracking-tight ${valueClass}`}>
+          <p className={`mt-1 truncate text-xl font-semibold tracking-tight ${valueClass}`}>
             {value}
           </p>
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
