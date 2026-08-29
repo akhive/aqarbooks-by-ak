@@ -382,7 +382,19 @@ function ContractsPage() {
                     </Link>
                   </TableCell>
                   <TableCell>{c.tenantName}</TableCell>
-                  <TableCell>{c.unitLabel}</TableCell>
+                  <TableCell>
+                    {c.unitId ? (
+                      <Link
+                        to="/units/$unitId"
+                        params={{ unitId: c.unitId }}
+                        className="text-primary underline-offset-2 hover:underline"
+                      >
+                        {c.unitLabel}
+                      </Link>
+                    ) : (
+                      c.unitLabel
+                    )}
+                  </TableCell>
                   <TableCell>{c.bedroomType || "—"}</TableCell>
                   <TableCell>
                     <span
