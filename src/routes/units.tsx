@@ -1,213 +1,176 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo } from "react";
+import { ArrowLeft } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { currency, useStore, type Unit } from "@/lib/store";
-import { supabase } from "../supabase";
+import { currency, fmtDate, useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/units")({
+export const Route = createFileRoute("/units/$unitId")({
   head: () => ({
-    meta: [{ title: "Units — Estate Manager" }],
+    meta: [{ title: "Unit — Aqar Books" }],
   }),
-  component: UnitsPage,
+  component: UnitDetailPage,
 });
 
-type Form = Omit<Unit, "id">;
-const empty: Form = { flatNo: "", building: "", bedroomType: "", marketRent: 0 };
+function UnitDetailPage() {
+  const { unitId } = Route.useParams();
+  const { data } = useStore();
 
-function UnitsPage() {
-  const { data, refresh } = useStore();
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState<Form>(empty);
-  const [error, setError] = useState("");
+  const unit = data.units.find((u) => u.id === unitId);
 
-  const startAdd = () => {
-    setEditing(null);
-    setForm(empty);
-    setError("");
-    setOpen(true);
-  };
+  const history = useMemo(() => {
+    return data.contracts
+      .filter((c) => c.unitId === unitId && (c.status || "Active") !== "Draft")
+      .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+  }, [data.contracts, unitId]);
 
-  const startEdit = (u: Unit) => {
-    setEditing(u.id);
-    setForm({
-      flatNo: u.flatNo,
-      building: u.building,
-      bedroomType: u.bedroomType,
-      marketRent: u.marketRent,
-    });
-    setError("");
-    setOpen(true);
-  };
+  const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.flatNo.trim()) return setError("Flat number is required.");
+  const current = history.find(
+    (c) =>
+      (c.status || "Active") === "Active" &&
+      c.startDate &&
+      c.endDate &&
+      c.startDate <= new Date().toISOString().slice(0, 10) &&
+      c.endDate >= new Date().toISOString().slice(0, 10),
+  );
 
-    try {
-      if (editing) {
-        const { error: err } = await supabase
-          .from("units")
-          .update({
-            flat_no: form.flatNo,
-            building: form.building,
-            bedroom_type: form.bedroomType,
-            market_rent: form.marketRent,
-          })
-          .eq("id", editing);
-        if (err) throw err;
-        toast.success("Unit updated");
-      } else {
-        const { error: err } = await supabase.from("units").insert({
-          flat_no: form.flatNo,
-          building: form.building,
-          bedroom_type: form.bedroomType,
-          market_rent: form.marketRent,
-        });
-        if (err) throw err;
-        toast.success("Unit added");
-      }
-      await refresh();
-      setOpen(false);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Failed to save unit");
-      toast.error(err.message || "Failed to save unit");
-    }
-  };
-
-  const remove = async (id: string, flatNo: string) => {
-    if (!confirm(`Delete unit ${flatNo}?`)) return;
-    try {
-      const { error: err } = await supabase.from("units").delete().eq("id", id);
-      if (err) throw err;
-      toast.success("Unit deleted");
-      await refresh();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to delete");
-    }
-  };
+  if (!unit) {
+    return (
+      <AppShell>
+        <PageHeader title="Unit not found" />
+        <Button asChild variant="outline">
+          <Link to="/units">Back to units</Link>
+        </Button>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
+      <div className="mb-4">
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/units">
+            <ArrowLeft className="mr-2 size-4" />
+            Units
+          </Link>
+        </Button>
+      </div>
+
       <PageHeader
-        title="Units"
-        description={`${data.units.length} unit(s)`}
-        action={
-          <Button onClick={startAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Unit
-          </Button>
-        }
+        title={`Flat ${unit.flatNo}`}
+        description={[unit.building, unit.bedroomType].filter(Boolean).join(" · ") || "Unit detail"}
       />
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Flat</TableHead>
-                <TableHead>Building</TableHead>
-                <TableHead>Bedroom Type</TableHead>
-                <TableHead>Market Rent</TableHead>
-                <TableHead className="w-24"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.units.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                    No units yet. Click “Add Unit”.
-                  </TableCell>
-                </TableRow>
-              )}
-              {data.units.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.flatNo}</TableCell>
-                  <TableCell>{u.building || "—"}</TableCell>
-                  <TableCell>{u.bedroomType || "—"}</TableCell>
-                  <TableCell>{currency(u.marketRent)}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => startEdit(u)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={() => remove(u.id, u.flatNo)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Market rent</CardTitle>
+          </CardHeader>
+          <CardContent className="text-lg font-semibold">{currency(unit.marketRent)}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Leases (history)</CardTitle>
+          </CardHeader>
+          <CardContent className="text-lg font-semibold">{history.length}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Current tenant</CardTitle>
+          </CardHeader>
+          <CardContent className="text-lg font-semibold">
+            {current ? tenantName(current.tenantId) : "Vacant"}
+          </CardContent>
+        </Card>
+      </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit Unit" : "Add Unit"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <Label>Flat No *</Label>
-              <Input
-                value={form.flatNo}
-                onChange={(e) => setForm({ ...form, flatNo: e.target.value })}
-                placeholder="101"
-              />
-            </div>
-            <div>
-              <Label>Building</Label>
-              <Input
-                value={form.building}
-                onChange={(e) => setForm({ ...form, building: e.target.value })}
-                placeholder="Al Noor Tower"
-              />
-            </div>
-            <div>
-              <Label>Bedroom Type</Label>
-              <Input
-                value={form.bedroomType}
-                onChange={(e) => setForm({ ...form, bedroomType: e.target.value })}
-                placeholder="1BHK / 2BHK / Studio"
-              />
-            </div>
-            <div>
-              <Label>Market Rent (AED)</Label>
-              <Input
-                type="number"
-                value={form.marketRent || ""}
-                onChange={(e) => setForm({ ...form, marketRent: Number(e.target.value) })}
-              />
-            </div>
+      <Tabs defaultValue="history">
+        <TabsList>
+          <TabsTrigger value="history">Lease history</TabsTrigger>
+          <TabsTrigger value="info">Unit info</TabsTrigger>
+        </TabsList>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+        <TabsContent value="history" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                All contracts for Flat {unit.flatNo}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Includes every tenant who occupied this unit (any year). Newest first.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lease No</TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead className="text-right">Rent</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {history.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                        No leases linked to this unit yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {history.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <Link
+                          to="/contract/$contractId"
+                          params={{ contractId: c.id }}
+                          className="font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          {c.leaseNo || "—"}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{tenantName(c.tenantId)}</TableCell>
+                      <TableCell>{c.status || "Active"}</TableCell>
+                      <TableCell>{fmtDate(c.startDate)}</TableCell>
+                      <TableCell>{fmtDate(c.endedAt || c.endDate)}</TableCell>
+                      <TableCell className="text-right">{currency(c.rent)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">{editing ? "Save" : "Add Unit"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <TabsContent value="info" className="mt-4">
+          <Card>
+            <CardContent className="space-y-2 pt-6 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Flat</span>
+                <span className="font-medium">{unit.flatNo}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Building</span>
+                <span className="font-medium">{unit.building || "—"}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Type</span>
+                <span className="font-medium">{unit.bedroomType || "—"}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Market rent</span>
+                <span className="font-medium">{currency(unit.marketRent)}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </AppShell>
   );
 }
