@@ -773,9 +773,19 @@ function ContractDetailPage() {
                 <span className="text-muted-foreground">Email</span>
                 <span>{tenant?.email || "—"}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Unit</span>
-                <span className="font-medium">{unit?.flatNo || "—"}</span>
+                {contract.unitId ? (
+                  <Link
+                  to="/units/$unitId"
+                  params={{ unitId: contract.unitId }}
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  {data.units.find((u) => u.id === contract.unitId)?.flatNo || "—"}
+                </Link>
+              ) : (
+                <span>—</span>
+              )}
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Contract period</span>
