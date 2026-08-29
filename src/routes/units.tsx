@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ import { supabase } from "../supabase";
 
 export const Route = createFileRoute("/units")({
   head: () => ({
-    meta: [{ title: "Units — Aqar Books" }],
+    meta: [{ title: "Units — Estate Manager" }],
   }),
   component: UnitsPage,
 });
@@ -106,7 +106,7 @@ function UnitsPage() {
     <AppShell>
       <PageHeader
         title="Units"
-        description={`${data.units.length} unit(s) · Click flat no. for lease history`}
+        description={`${data.units.length} unit(s)`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -124,7 +124,7 @@ function UnitsPage() {
                 <TableHead>Building</TableHead>
                 <TableHead>Bedroom Type</TableHead>
                 <TableHead>Market Rent</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -137,15 +137,7 @@ function UnitsPage() {
               )}
               {data.units.map((u) => (
                 <TableRow key={u.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      to="/units/$unitId"
-                      params={{ unitId: u.id }}
-                      className="text-primary underline-offset-2 hover:underline"
-                    >
-                      {u.flatNo}
-                    </Link>
-                  </TableCell>
+                  <TableCell className="font-medium">{u.flatNo}</TableCell>
                   <TableCell>{u.building || "—"}</TableCell>
                   <TableCell>{u.bedroomType || "—"}</TableCell>
                   <TableCell>{currency(u.marketRent)}</TableCell>
