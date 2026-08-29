@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -36,14 +36,30 @@ export const Route = createFileRoute("/contract/$contractId")({
 });
 
 function addMonths(iso: string, months: number) {
-  const d = new Date(iso);
+  const d = new Date(iso + "T12:00:00");
   d.setMonth(d.getMonth() + months);
   return d.toISOString().slice(0, 10);
 }
 
+function addDays(iso: string, days: number) {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function toYmd(d: Date) {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function ContractDetailPage() {
   const { contractId } = Route.useParams();
-  const { data, loading, refresh, addCheque, deleteCheque, updateContract } = useStore();
+  const navigate = useNavigate();
+  const { data, loading, refresh, addCheque, deleteCheque, updateContract, addContract } =
+    useStore();
 
   const contract = data.contracts.find((c) => c.id === contractId);
   const tenant = data.tenants.find((t) => t.id === contract?.tenantId);
@@ -69,6 +85,101 @@ function ContractDetailPage() {
   const [actionNotes, setActionNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // —— Renew ——
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewLeaseNo, setRenewLeaseNo] = useState("");
+  const [renewStart, setRenewStart] = useState("");
+  const [renewEnd, setRenewEnd] = useState("");
+  const [renewRent, setRenewRent] = useState(0);
+  const [renewDeposit, setRenewDeposit] = useState(0);
+
+  const openRenew = () => {
+    if (!contract) return;
+    const newStart = addDays(contract.endDate, 1);
+    const oldEnd = new Date(contract.endDate + "T12:00:00");
+    oldEnd.setFullYear(oldEnd.getFullYear() + 1);
+    const newEnd = toYmd(oldEnd);
+
+    const nums = data.contracts
+      .map((c) => {
+        const m = (c.leaseNo || "").match(/(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+      })
+      .filter((n) => n > 0);
+    const next = String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0");
+
+    setRenewLeaseNo(next);
+    setRenewStart(newStart);
+    setRenewEnd(newEnd);
+    setRenewRent(0);
+    setRenewDeposit(contract.depositAmount || 0);
+    setRenewOpen(true);
+  };
+
+  const confirmRenew = async () => {
+    if (!contract) return;
+    if (!renewRent || renewRent <= 0) {
+      toast.error("Enter renewal rent");
+      return;
+    }
+    if (!renewStart || !renewEnd) {
+      toast.error("Start and end dates required");
+      return;
+    }
+    setSaving(true);
+    try {
+      // Prefer store helper if you have addContract; else Supabase insert
+      if (typeof addContract === "function") {
+        const created = await addContract({
+          leaseNo: renewLeaseNo,
+          tenantId: contract.tenantId,
+          unitId: contract.unitId,
+          startDate: renewStart,
+          endDate: renewEnd,
+          rent: renewRent,
+          previousRent: contract.rent,
+          bedroomType: contract.bedroomType || unit?.bedroomType || "",
+          status: "Draft",
+          depositAmount: renewDeposit || 0,
+        } as any);
+        toast.success("Draft renewal created");
+        setRenewOpen(false);
+        await refresh();
+        if (created?.id) {
+          navigate({ to: "/contract/$contractId", params: { contractId: created.id } });
+        }
+      } else {
+        const { data: row, error } = await supabase
+          .from("contracts")
+          .insert({
+            lease_no: renewLeaseNo,
+            tenant_id: contract.tenantId,
+            unit_id: contract.unitId,
+            start_date: renewStart,
+            end_date: renewEnd,
+            rent: renewRent,
+            previous_rent: contract.rent,
+            bedroom_type: contract.bedroomType || unit?.bedroomType || null,
+            status: "Draft",
+            deposit_amount: renewDeposit || 0,
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+        toast.success("Draft renewal created");
+        setRenewOpen(false);
+        await refresh();
+        if (row?.id) {
+          navigate({ to: "/contract/$contractId", params: { contractId: row.id } });
+        }
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Renew failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <AppShell>
@@ -81,7 +192,6 @@ function ContractDetailPage() {
     return (
       <AppShell>
         <p className="text-muted-foreground">Contract not found.</p>
-        <p className="mt-1 text-xs text-muted-foreground">ID: {contractId}</p>
         <Button asChild className="mt-4" variant="outline">
           <Link to="/contracts">Back to Contracts</Link>
         </Button>
@@ -97,10 +207,6 @@ function ContractDetailPage() {
       toast.error("Select first cheque date");
       return;
     }
-    if (splitCount < 1 || splitCount > 24) {
-      toast.error("Split count must be 1–24");
-      return;
-    }
     setSaving(true);
     try {
       const each = Math.round((contract.rent / splitCount) * 100) / 100;
@@ -108,11 +214,10 @@ function ContractDetailPage() {
       for (let i = 0; i < splitCount; i++) {
         const amount = i === splitCount - 1 ? Math.round(remaining * 100) / 100 : each;
         remaining -= amount;
-        const date = addMonths(firstDate, i);
         await addCheque({
           tenantId: contract.tenantId,
           contractId: contract.id,
-          chequeDate: date,
+          chequeDate: addMonths(firstDate, i),
           chequeNo: `${contract.leaseNo || "L"}-${i + 1}`,
           bank: "",
           amount,
@@ -147,7 +252,6 @@ function ContractDetailPage() {
           notes: actionNotes || null,
         })
         .eq("id", contract.id);
-
       toast.success(`Contract marked as ${actionType}`);
       setActionOpen(false);
       await refresh();
@@ -161,9 +265,11 @@ function ContractDetailPage() {
   const statusColor =
     contract.status === "Active"
       ? "bg-emerald-100 text-emerald-800"
-      : contract.status === "Ended"
-        ? "bg-slate-100 text-slate-800"
-        : "bg-red-100 text-red-800";
+      : contract.status === "Draft"
+        ? "bg-amber-100 text-amber-800"
+        : contract.status === "Ended"
+          ? "bg-slate-100 text-slate-800"
+          : "bg-red-100 text-red-800";
 
   const unitLink = contract.unitId ? (
     <Link
@@ -190,13 +296,14 @@ function ContractDetailPage() {
 
       <PageHeader
         title={`Lease ${contract.leaseNo || "—"}`}
-        description={
-          <span>
-            {tenant?.name || "—"} · Unit {unitLink}
-          </span>
-        }
+        description={`${tenant?.name || "—"} · Unit ${unit?.flatNo || "—"}`}
         action={
           <div className="flex flex-wrap gap-2">
+            {(contract.status || "Active") === "Active" && (
+              <Button variant="default" onClick={openRenew}>
+                Renew
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setSplitOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Split PDCs
@@ -390,6 +497,58 @@ function ContractDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Renew dialog */}
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm renewal</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>New lease no</Label>
+              <Input value={renewLeaseNo} onChange={(e) => setRenewLeaseNo(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start</Label>
+                <Input type="date" value={renewStart} onChange={(e) => setRenewStart(e.target.value)} />
+              </div>
+              <div>
+                <Label>End</Label>
+                <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Renewal rent (AED) *</Label>
+              <Input
+                type="number"
+                value={renewRent || ""}
+                onChange={(e) => setRenewRent(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <Label>Deposit (AED)</Label>
+              <Input
+                type="number"
+                value={renewDeposit || ""}
+                onChange={(e) => setRenewDeposit(Number(e.target.value))}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Creates a <strong>Draft</strong> lease. Submit it when PDCs are ready.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenewOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRenew} disabled={saving}>
+              {saving ? "Creating..." : "Create draft lease"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent>
