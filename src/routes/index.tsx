@@ -360,7 +360,7 @@ function Dashboard() {
           }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
-          palette={profit >= 0 ? "teal" : "rose"}
+          palette={profit >= 0 ? "emerald" : "emerald"}
         />
         <Stat
           label="Occupancy"
@@ -368,7 +368,7 @@ function Dashboard() {
           hint={`${coveringToday} lease(s) covering today · ${activeLeaseCount} status Active · ${vacant.length} vacant`}
           icon={DoorOpen}
           tone={occupiedCount > 0 ? "positive" : "default"}
-          palette="blue"
+          palette="emerald"
         />
         <Stat
           label="Average Yearly Rental (AED)"
