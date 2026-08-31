@@ -348,7 +348,7 @@ function Dashboard() {
           value={currency(expense)}
           icon={ArrowDownRight}
           tone="negative"
-          palette="rose"
+          palette="emerald"
         />
         <Stat
           label="Net profit"
@@ -376,7 +376,7 @@ function Dashboard() {
           hint={rentalHint}
           icon={TrendingUp}
           tone={yoyChange >= 0 ? "positive" : "negative"}
-          palette="amber"
+          palette="emerald"
         />
       </div>
 
