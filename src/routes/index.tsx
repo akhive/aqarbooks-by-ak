@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo } from "react";
 import {
   Area,
   AreaChart,
@@ -18,20 +18,13 @@ import {
   ArrowUpRight,
   CalendarClock,
   DoorOpen,
-  Maximize2,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
+import { APP_VERSION, APP_VERSION_LABEL, loadVersionMeta } from "@/lib/version";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -89,37 +82,67 @@ function Stat({
   hint,
   icon: Icon,
   tone = "default",
+  palette = "slate",
 }: {
   label: string;
   value: string;
   hint?: string;
   icon: React.ElementType;
   tone?: "default" | "positive" | "negative";
+  palette?: "emerald" | "rose" | "teal" | "blue" | "amber" | "violet" | "slate";
 }) {
+  const skins: Record<string, { card: string; value: string; icon: string }> = {
+    emerald: {
+      card: "border-emerald-300 bg-gradient-to-br from-emerald-50 to-white shadow-sm",
+      value: "text-emerald-700",
+      icon: "bg-emerald-500 text-white",
+    },
+    rose: {
+      card: "border-rose-300 bg-gradient-to-br from-rose-50 to-white shadow-sm",
+      value: "text-rose-700",
+      icon: "bg-rose-500 text-white",
+    },
+    teal: {
+      card: "border-teal-300 bg-gradient-to-br from-teal-50 to-white shadow-sm",
+      value: "text-teal-800",
+      icon: "bg-teal-500 text-white",
+    },
+    blue: {
+      card: "border-blue-300 bg-gradient-to-br from-blue-50 to-white shadow-sm",
+      value: "text-blue-800",
+      icon: "bg-blue-500 text-white",
+    },
+    amber: {
+      card: "border-amber-300 bg-gradient-to-br from-amber-50 to-white shadow-sm",
+      value: "text-amber-800",
+      icon: "bg-amber-500 text-white",
+    },
+    violet: {
+      card: "border-violet-300 bg-gradient-to-br from-violet-50 to-white shadow-sm",
+      value: "text-violet-800",
+      icon: "bg-violet-500 text-white",
+    },
+    slate: {
+      card: "border-slate-300 bg-gradient-to-br from-slate-50 to-white shadow-sm",
+      value: "text-slate-800",
+      icon: "bg-slate-600 text-white",
+    },
+  };
+  const skin = skins[palette] || skins.slate;
   const valueClass =
-    tone === "positive"
-      ? "text-emerald-600"
-      : tone === "negative"
-        ? "text-red-600"
-        : "text-foreground";
-  const iconWrap =
-    tone === "positive"
-      ? "bg-emerald-50 text-emerald-700"
-      : tone === "negative"
-        ? "bg-red-50 text-red-700"
-        : "bg-primary/10 text-primary";
+    tone === "negative" ? "text-rose-700" : tone === "positive" ? skin.value : skin.value;
 
   return (
-    <Card className="border-border/80 shadow-sm">
+    <Card className={`border-2 ${skin.card}`}>
       <CardContent className="flex items-start justify-between gap-3 pb-5 pt-5">
         <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className="text-sm font-medium text-slate-600">{label}</p>
           <p className={`mt-1 truncate text-xl font-semibold tracking-tight ${valueClass}`}>
             {value}
           </p>
-          {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+          {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
         </div>
-        <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconWrap}`}>
+        <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${skin.icon}`}>
           <Icon className="size-5" />
         </span>
       </CardContent>
@@ -131,9 +154,6 @@ function Dashboard() {
   const { data } = useStore();
   const year = new Date().getFullYear();
   const today = localToday();
-  const [listModal, setListModal] = useState<
-    null | "pdc" | "renewals" | "expired" | "vacant"
-  >(null);
 
   const { income, expense, otherIncome, incomePrev } = useMemo(() => {
     let income = 0;
@@ -290,7 +310,60 @@ function Dashboard() {
 
   return (
     <AppShell>
-      <PageHeader title="Dashboard" description={`Accrual performance for ${year}`} />
+      <PageHeader
+        title="Dashboard"
+        description={`Accrual performance for ${year} · App ${APP_VERSION}`}
+        action={
+          <Link
+            to="/backup"
+            className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
+          >
+            Backup & versions
+          </Link>
+        }
+      />
+
+      {(() => {
+        const meta = loadVersionMeta();
+        return (
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-2 border-indigo-300 bg-gradient-to-br from-indigo-50 to-white">
+              <CardContent className="pt-4">
+                <p className="text-xs font-medium text-indigo-600">App version</p>
+                <p className="text-lg font-semibold text-indigo-900">{APP_VERSION}</p>
+                <p className="text-xs text-indigo-700/70">{APP_VERSION_LABEL}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-2 border-cyan-300 bg-gradient-to-br from-cyan-50 to-white">
+              <CardContent className="pt-4">
+                <p className="text-xs font-medium text-cyan-700">Live data</p>
+                <p className="text-lg font-semibold text-cyan-900">{data.contracts.length} leases</p>
+                <p className="text-xs text-cyan-800/70">
+                  {data.units.length} units · {data.tenants.length} tenants · {data.cheques.length} PDCs
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-2 border-violet-300 bg-gradient-to-br from-violet-50 to-white">
+              <CardContent className="pt-4">
+                <p className="text-xs font-medium text-violet-700">Last backup</p>
+                <p className="truncate text-lg font-semibold text-violet-900">{meta.lastBackupLabel || "None"}</p>
+                <p className="text-xs text-violet-800/70">
+                  {meta.lastBackupAt ? new Date(meta.lastBackupAt).toLocaleString() : "Open Backup to save"}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-50 to-white">
+              <CardContent className="pt-4">
+                <p className="text-xs font-medium text-fuchsia-700">Last restore</p>
+                <p className="truncate text-lg font-semibold text-fuchsia-900">{meta.lastRestoreLabel || "Never"}</p>
+                <p className="text-xs text-fuchsia-800/70">
+                  {meta.lastRestoreAt ? new Date(meta.lastRestoreAt).toLocaleString() : "—"}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
@@ -299,8 +372,15 @@ function Dashboard() {
           hint=""
           icon={ArrowUpRight}
           tone="positive"
+          palette="emerald"
         />
-        <Stat label="Expenses" value={currency(expense)} icon={ArrowDownRight} tone="negative" />
+        <Stat
+          label="Expenses"
+          value={currency(expense)}
+          icon={ArrowDownRight}
+          tone="negative"
+          palette="rose"
+        />
         <Stat
           label="Net profit"
           value={currency(profit)}
@@ -311,6 +391,7 @@ function Dashboard() {
           }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
+          palette={profit >= 0 ? "teal" : "rose"}
         />
         <Stat
           label="Occupancy"
@@ -318,6 +399,7 @@ function Dashboard() {
           hint={`${coveringToday} lease(s) covering today · ${activeLeaseCount} status Active · ${vacant.length} vacant`}
           icon={DoorOpen}
           tone={occupiedCount > 0 ? "positive" : "default"}
+          palette="blue"
         />
         <Stat
           label="Average Yearly Rental (AED)"
@@ -325,11 +407,12 @@ function Dashboard() {
           hint={rentalHint}
           icon={TrendingUp}
           tone={yoyChange >= 0 ? "positive" : "negative"}
+          palette="amber"
         />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card className="border-border/80 shadow-sm lg:col-span-2">
+        <Card className="border-2 border-teal-300 bg-gradient-to-br from-teal-50/80 to-white shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">PDC received trend ({year})</CardTitle>
           </CardHeader>
@@ -378,7 +461,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden border-border/80 shadow-sm">
+        <Card className="overflow-hidden border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Rent by year ({year - 1} / {year} / {year + 1})
@@ -433,24 +516,12 @@ function Dashboard() {
         </Card>
       </div>
 
+      {/* Four equal cards — fixed height + scroll */}
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {/* PDCs */}
-        <Card className="flex flex-col border-border/80 shadow-sm">
+        <Card className="flex flex-col border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base">Upcoming PDCs (120 days)</CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-8"
-                title="Maximize"
-                onClick={() => setListModal("pdc")}
-              >
-                <Maximize2 className="size-4" />
-              </Button>
-              <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
-            </div>
+            <CardTitle className="text-base text-sky-900">Upcoming PDCs (120 days)</CardTitle>
+            <CalendarClock className="size-4 shrink-0 text-sky-600" />
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {upcoming.length === 0 ? (
@@ -459,7 +530,7 @@ function Dashboard() {
               upcoming.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-sky-200 bg-white/80 px-3 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{tenantName(c.tenantId)}</p>
@@ -477,23 +548,10 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Renewals */}
-        <Card className="flex flex-col border-border/80 shadow-sm">
+        <Card className="flex flex-col border-2 border-violet-300 bg-gradient-to-br from-violet-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base">Upcoming renewals</CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-8"
-                title="Maximize"
-                onClick={() => setListModal("renewals")}
-              >
-                <Maximize2 className="size-4" />
-              </Button>
-              <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
-            </div>
+            <CardTitle className="text-base text-violet-900">Upcoming renewals</CardTitle>
+            <CalendarClock className="size-4 shrink-0 text-violet-600" />
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {upcomingRenewals.length === 0 ? (
@@ -504,7 +562,7 @@ function Dashboard() {
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-violet-200 bg-white/80 px-3 py-2"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">
@@ -517,7 +575,7 @@ function Dashboard() {
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-semibold">{currency(c.rent)}</p>
                       <p className="text-xs text-muted-foreground">in {daysUntil(c.endDate)}d</p>
-                  </div>
+                    </div>
                   </div>
                 );
               })
@@ -525,23 +583,10 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Expired */}
-        <Card className="flex flex-col border-border/80 shadow-sm">
+        <Card className="flex flex-col border-2 border-rose-300 bg-gradient-to-br from-rose-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base">Expired contracts</CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-8"
-                title="Maximize"
-                onClick={() => setListModal("expired")}
-              >
-                <Maximize2 className="size-4" />
-              </Button>
-              <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
-            </div>
+            <CardTitle className="text-base text-rose-900">Expired contracts</CardTitle>
+            <CalendarClock className="size-4 shrink-0 text-rose-600" />
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {expiredContracts.length === 0 ? (
@@ -553,7 +598,7 @@ function Dashboard() {
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white/80 px-3 py-2"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">
@@ -576,23 +621,10 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Vacant */}
-        <Card className="flex flex-col border-border/80 shadow-sm">
+        <Card className="flex flex-col border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base">Vacant units</CardTitle>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-8"
-                title="Maximize"
-                onClick={() => setListModal("vacant")}
-              >
-                <Maximize2 className="size-4" />
-              </Button>
-              <DoorOpen className="size-4 shrink-0 text-muted-foreground" />
-            </div>
+            <CardTitle className="text-base text-amber-900">Vacant units</CardTitle>
+            <DoorOpen className="size-4 shrink-0 text-amber-600" />
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {vacant.length === 0 ? (
@@ -601,7 +633,7 @@ function Dashboard() {
               vacant.map((u) => (
                 <div
                   key={u.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">Flat {u.flatNo}</p>
@@ -618,126 +650,6 @@ function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Maximize popup — full data, no trim */}
-      <Dialog open={listModal !== null} onOpenChange={(o) => !o && setListModal(null)}>
-        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
-          <DialogHeader className="border-b px-4 py-3">
-            <DialogTitle>
-              {listModal === "pdc" && `Upcoming PDCs (${upcoming.length})`}
-              {listModal === "renewals" && `Upcoming renewals (${upcomingRenewals.length})`}
-              {listModal === "expired" && `Expired contracts (${expiredContracts.length})`}
-              {listModal === "vacant" && `Vacant units (${vacant.length})`}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-2 overflow-y-auto px-4 py-3">
-            {listModal === "pdc" &&
-              (upcoming.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No PDCs.</p>
-              ) : (
-                upcoming.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2"
-                  >
-                    <div className="min-w-0 break-words">
-                      <p className="text-sm font-medium">{tenantName(c.tenantId)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        #{c.chequeNo || "—"} · {c.bank || "—"} · {fmtDate(c.chequeDate)}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-sm font-semibold">{currency(c.amount)}</p>
-                      <p className="text-xs text-muted-foreground">in {daysUntil(c.chequeDate)}d</p>
-                    </div>
-                  </div>
-                ))
-              ))}
-
-            {listModal === "renewals" &&
-              (upcomingRenewals.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No renewals.</p>
-              ) : (
-                upcomingRenewals.map((c) => {
-                  const unit = data.units.find((u) => u.id === c.unitId);
-                  return (
-                    <div
-                      key={c.id}
-                      className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2"
-                    >
-                      <div className="min-w-0 break-words">
-                        <p className="text-sm font-medium">
-                          {c.leaseNo || "—"} · {tenantName(c.tenantId)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Flat {unit?.flatNo || "—"} · ends {fmtDate(c.endDate)}
-                        </p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-sm font-semibold">{currency(c.rent)}</p>
-                        <p className="text-xs text-muted-foreground">in {daysUntil(c.endDate)}d</p>
-                      </div>
-                    </div>
-                  );
-                })
-              ))}
-
-            {listModal === "expired" &&
-              (expiredContracts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No expired contracts.</p>
-              ) : (
-                expiredContracts.map((c) => {
-                  const unit = data.units.find((u) => u.id === c.unitId);
-                  const overdue = daysUntil(c.endDate);
-                  return (
-                    <div
-                      key={c.id}
-                      className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2"
-                    >
-                      <div className="min-w-0 break-words">
-                        <p className="text-sm font-medium">
-                          {c.leaseNo || "—"} · {tenantName(c.tenantId)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Flat {unit?.flatNo || "—"} · ended {fmtDate(c.endDate)}
-                        </p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-sm font-semibold">{currency(c.rent)}</p>
-                        <p className="text-xs text-red-600">
-                          {overdue === 0 ? "Ends today" : `${Math.abs(overdue)}d overdue`}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
-              ))}
-
-            {listModal === "vacant" &&
-              (vacant.length === 0 ? (
-                <p className="text-sm text-muted-foreground">All units occupied.</p>
-              ) : (
-                vacant.map((u) => (
-                  <div
-                    key={u.id}
-                    className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2"
-                  >
-                    <div className="min-w-0 break-words">
-                      <p className="text-sm font-medium">Flat {u.flatNo}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {u.building || "—"} · {u.bedroomType || "—"}
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-sm text-muted-foreground">
-                      {currency(u.marketRent)}/yr
-                    </p>
-                  </div>
-                ))
-              ))}
-          </div>
-        </DialogContent>
-      </Dialog>
     </AppShell>
   );
 }
