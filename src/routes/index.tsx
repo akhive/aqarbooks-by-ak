@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -18,11 +18,19 @@ import {
   ArrowUpRight,
   CalendarClock,
   DoorOpen,
+  Maximize2,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
 import { APP_VERSION, APP_VERSION_LABEL, loadVersionMeta } from "@/lib/version";
 
@@ -154,6 +162,9 @@ function Dashboard() {
   const { data } = useStore();
   const year = new Date().getFullYear();
   const today = localToday();
+  const [listModal, setListModal] = useState<
+    null | "pdc" | "renewals" | "expired" | "vacant"
+  >(null);
 
   const { income, expense, otherIncome, incomePrev } = useMemo(() => {
     let income = 0;
@@ -312,7 +323,7 @@ function Dashboard() {
     <AppShell>
       <PageHeader
         title="Dashboard"
-        description={`Performance for ${year} · App ${APP_VERSION}`}
+        description={`Accrual performance for ${year} · App ${APP_VERSION}`}
         action={
           <Link
             to="/backup"
@@ -479,7 +490,19 @@ function Dashboard() {
         <Card className="flex flex-col border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-sky-900">Upcoming PDCs (120 days)</CardTitle>
-            <CalendarClock className="size-4 shrink-0 text-sky-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 text-sky-700 hover:bg-sky-100"
+                title="Maximize"
+                onClick={() => setListModal("pdc")}
+              >
+                <Maximize2 className="size-4" />
+              </Button>
+              <CalendarClock className="size-4 shrink-0 text-sky-600" />
+            </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {upcoming.length === 0 ? (
@@ -509,7 +532,19 @@ function Dashboard() {
         <Card className="flex flex-col border-2 border-violet-300 bg-gradient-to-br from-violet-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-violet-900">Upcoming renewals</CardTitle>
-            <CalendarClock className="size-4 shrink-0 text-violet-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 text-violet-700 hover:bg-violet-100"
+                title="Maximize"
+                onClick={() => setListModal("renewals")}
+              >
+                <Maximize2 className="size-4" />
+              </Button>
+              <CalendarClock className="size-4 shrink-0 text-violet-600" />
+            </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {upcomingRenewals.length === 0 ? (
@@ -544,7 +579,19 @@ function Dashboard() {
         <Card className="flex flex-col border-2 border-rose-300 bg-gradient-to-br from-rose-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-rose-900">Expired contracts</CardTitle>
-            <CalendarClock className="size-4 shrink-0 text-rose-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 text-rose-700 hover:bg-rose-100"
+                title="Maximize"
+                onClick={() => setListModal("expired")}
+              >
+                <Maximize2 className="size-4" />
+              </Button>
+              <CalendarClock className="size-4 shrink-0 text-rose-600" />
+            </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {expiredContracts.length === 0 ? (
@@ -582,7 +629,19 @@ function Dashboard() {
         <Card className="flex flex-col border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-amber-900">Vacant units</CardTitle>
-            <DoorOpen className="size-4 shrink-0 text-amber-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 text-amber-700 hover:bg-amber-100"
+                title="Maximize"
+                onClick={() => setListModal("vacant")}
+              >
+                <Maximize2 className="size-4" />
+              </Button>
+              <DoorOpen className="size-4 shrink-0 text-amber-600" />
+            </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
             {vacant.length === 0 ? (
@@ -608,6 +667,125 @@ function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={listModal !== null} onOpenChange={(o) => !o && setListModal(null)}>
+        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+          <DialogHeader className="border-b px-4 py-3">
+            <DialogTitle>
+              {listModal === "pdc" && `Upcoming PDCs (${upcoming.length})`}
+              {listModal === "renewals" && `Upcoming renewals (${upcomingRenewals.length})`}
+              {listModal === "expired" && `Expired contracts (${expiredContracts.length})`}
+              {listModal === "vacant" && `Vacant units (${vacant.length})`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 overflow-y-auto p-4">
+            {listModal === "pdc" &&
+              (upcoming.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No PDCs in the next 120 days.</p>
+              ) : (
+                upcoming.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-2"
+                  >
+                    <div className="min-w-0 break-words">
+                      <p className="text-sm font-medium">{tenantName(c.tenantId)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        #{c.chequeNo} · {c.bank} · {fmtDate(c.chequeDate)}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold">{currency(c.amount)}</p>
+                      <p className="text-xs text-muted-foreground">in {daysUntil(c.chequeDate)}d</p>
+                    </div>
+                  </div>
+                ))
+              ))}
+
+            {listModal === "renewals" &&
+              (upcomingRenewals.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No renewals in the next 120 days.</p>
+              ) : (
+                upcomingRenewals.map((c) => {
+                  const unit = data.units.find((u) => u.id === c.unitId);
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex items-start justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2"
+                    >
+                      <div className="min-w-0 break-words">
+                        <p className="text-sm font-medium">
+                          {c.leaseNo || "—"} · {tenantName(c.tenantId)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Flat {unit?.flatNo || "—"} · ends {fmtDate(c.endDate)}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-semibold">{currency(c.rent)}</p>
+                        <p className="text-xs text-muted-foreground">in {daysUntil(c.endDate)}d</p>
+                      </div>
+                    </div>
+                  );
+                })
+              ))}
+
+            {listModal === "expired" &&
+              (expiredContracts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No expired contracts.</p>
+              ) : (
+                expiredContracts.map((c) => {
+                  const unit = data.units.find((u) => u.id === c.unitId);
+                  const overdue = daysUntil(c.endDate);
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50/50 px-3 py-2"
+                    >
+                      <div className="min-w-0 break-words">
+                        <p className="text-sm font-medium">
+                          {c.leaseNo || "—"} · {tenantName(c.tenantId)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Flat {unit?.flatNo || "—"} · ended {fmtDate(c.endDate)}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-semibold">{currency(c.rent)}</p>
+                        <p className="text-xs text-red-600">
+                          {overdue === 0 ? "Ends today" : `${Math.abs(overdue)}d overdue`}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              ))}
+
+            {listModal === "vacant" &&
+              (vacant.length === 0 ? (
+                <p className="text-sm text-muted-foreground">All units occupied.</p>
+              ) : (
+                vacant.map((u) => (
+                  <div
+                    key={u.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2"
+                  >
+                    <div className="min-w-0 break-words">
+                      <p className="text-sm font-medium">Flat {u.flatNo}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {u.building || "—"} · {u.bedroomType || "—"}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm text-muted-foreground">
+                      {currency(u.marketRent)}/yr
+                    </p>
+                  </div>
+                ))
+              ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </AppShell>
   );
 }
