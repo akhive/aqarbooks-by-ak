@@ -312,7 +312,7 @@ function Dashboard() {
     <AppShell>
       <PageHeader
         title="Dashboard"
-        description={`Accrual performance for ${year} · App ${APP_VERSION}`}
+        description={`Performance for ${year} · App ${APP_VERSION}`}
         action={
           <Link
             to="/backup"
