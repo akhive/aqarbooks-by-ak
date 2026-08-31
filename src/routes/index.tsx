@@ -323,48 +323,6 @@ function Dashboard() {
         }
       />
 
-      {(() => {
-        const meta = loadVersionMeta();
-        return (
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="border-2 border-indigo-300 bg-gradient-to-br from-indigo-50 to-white">
-              <CardContent className="pt-4">
-                <p className="text-xs font-medium text-indigo-600">App version</p>
-                <p className="text-lg font-semibold text-indigo-900">{APP_VERSION}</p>
-                <p className="text-xs text-indigo-700/70">{APP_VERSION_LABEL}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-2 border-cyan-300 bg-gradient-to-br from-cyan-50 to-white">
-              <CardContent className="pt-4">
-                <p className="text-xs font-medium text-cyan-700">Live data</p>
-                <p className="text-lg font-semibold text-cyan-900">{data.contracts.length} leases</p>
-                <p className="text-xs text-cyan-800/70">
-                  {data.units.length} units · {data.tenants.length} tenants · {data.cheques.length} PDCs
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-2 border-violet-300 bg-gradient-to-br from-violet-50 to-white">
-              <CardContent className="pt-4">
-                <p className="text-xs font-medium text-violet-700">Last backup</p>
-                <p className="truncate text-lg font-semibold text-violet-900">{meta.lastBackupLabel || "None"}</p>
-                <p className="text-xs text-violet-800/70">
-                  {meta.lastBackupAt ? new Date(meta.lastBackupAt).toLocaleString() : "Open Backup to save"}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-50 to-white">
-              <CardContent className="pt-4">
-                <p className="text-xs font-medium text-fuchsia-700">Last restore</p>
-                <p className="truncate text-lg font-semibold text-fuchsia-900">{meta.lastRestoreLabel || "Never"}</p>
-                <p className="text-xs text-fuchsia-800/70">
-                  {meta.lastRestoreAt ? new Date(meta.lastRestoreAt).toLocaleString() : "—"}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      })()}
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
           label="Income"
