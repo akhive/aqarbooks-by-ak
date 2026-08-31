@@ -1,5 +1,5 @@
 /** Bump this when you deploy a notable code change. */
-export const APP_VERSION = "2026.08.31";
+export const APP_VERSION = "Aq.Vr.31.08.26.01";
 export const APP_VERSION_LABEL = "Colourful dashboard";
 export const APP_NAME = "Aqar Books";
 
