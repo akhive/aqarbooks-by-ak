@@ -103,6 +103,7 @@ function ContractDetailPage() {
     deleteCheque,
     updateContract,
     addContract,
+    deleteContract,
   } = useStore();
 
   const contract = data.contracts.find((c) => c.id === contractId);
@@ -195,6 +196,7 @@ function ContractDetailPage() {
   const [renewEnd, setRenewEnd] = useState("");
   const [renewLeaseNo, setRenewLeaseNo] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     setBanks(loadBanks());
@@ -501,6 +503,17 @@ function ContractDetailPage() {
     }
   };
 
+  const deleteLease = async () => {
+    try {
+      await deleteContract(contract.id);
+      setDeleteOpen(false);
+      toast.success("Lease deleted");
+      navigate({ to: "/contracts" });
+    } catch (e: any) {
+      toast.error(e.message || "Delete failed");
+    }
+  };
+
   const statusColor =
     contract.status === "Draft"
       ? "bg-amber-100 text-amber-900"
@@ -703,7 +716,7 @@ function ContractDetailPage() {
           title={`Lease ${contract.leaseNo || "—"}`}
           description={`${tenant?.name || "—"} · Unit ${unit?.flatNo || "—"}`}
           action={
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {isDraft && <Button onClick={submitContract}>Submit contract</Button>}
               <Button variant="outline" onClick={() => setHistoryOpen(true)}>
                 Contract history
@@ -733,6 +746,10 @@ function ContractDetailPage() {
                   </Button>
                 </>
               )}
+              <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
             </div>
           }
         />
@@ -1317,6 +1334,34 @@ function ContractDetailPage() {
       </Dialog>
 
       
+
+      {/* Delete confirmation */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete lease {contract.leaseNo || ""}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will remove the lease and all linked PDCs for this contract. This cannot be undone
+            from the app.
+          </p>
+          <p className="text-sm">
+            Tenant: <strong>{tenant?.name || "—"}</strong>
+            <br />
+            Unit: <strong>{unit?.flatNo || "—"}</strong>
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={deleteLease}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Yes, delete lease
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Contract history popup */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-3xl overflow-hidden p-0">
