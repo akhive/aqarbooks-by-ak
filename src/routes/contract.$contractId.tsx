@@ -396,11 +396,7 @@ function ContractDetailPage() {
   };
 
   const openRenew = () => {
-    // Start = day after current end
     const newStart = addDays(contract.endDate, 1);
-
-    // End = same calendar date as old end, +1 year (anniversary)
-    // e.g. 14 Aug 2027 → 14 Aug 2028 (366 days if leap year in between)
     const oldEnd = new Date(contract.endDate + "T12:00:00");
     oldEnd.setFullYear(oldEnd.getFullYear() + 1);
     const newEnd = toYmd(oldEnd);
@@ -413,11 +409,25 @@ function ContractDetailPage() {
       .filter((n) => n > 0);
     const next = String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0");
 
+    // Deposit: first lease for this tenant+unit that has a deposit, else current
+    const chain = data.contracts
+      .filter(
+        (c) =>
+          c.tenantId === contract.tenantId &&
+          c.unitId === contract.unitId &&
+          (c.status || "Active") !== "Draft",
+      )
+      .sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
+    const firstDep =
+      chain.find((c) => (c.depositAmount || 0) > 0)?.depositAmount ||
+      contract.depositAmount ||
+      0;
+
     setRenewLeaseNo(next);
     setRenewStart(newStart);
     setRenewEnd(newEnd);
     setRenewRent(0);
-    setRenewDeposit(contract.depositAmount || 0);
+    setRenewDeposit(firstDep); // auto — not typed by user
     setRenewOpen(true);
   };
 
@@ -998,14 +1008,13 @@ function ContractDetailPage() {
                 onChange={(e) => setRenewRent(Number(e.target.value))}
               />
             </div>
-            <div>
-              <Label>Deposit (AED)</Label>
-              <Input
-                type="number"
-                value={renewDeposit || ""}
-                onChange={(e) => setRenewDeposit(Number(e.target.value))}
-              />
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Security deposit carried from first lease:{" "}
+              <strong>{currency(renewDeposit)}</strong>
+              <span className="block text-xs">
+                Same until break / cancel. Not asked again on renewal.
+              </span>
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenewOpen(false)}>
