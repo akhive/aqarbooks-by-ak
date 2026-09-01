@@ -434,7 +434,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white shadow-sm">
+        <Card className="overflow-hidden border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Rent by year ({year - 1} / {year} / {year + 1})
@@ -499,13 +499,13 @@ function Dashboard() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 text-emerald-700 hover:bg-sky-100"
+                className="size-8 text-emerald-700 hover:bg-emerald-100"
                 title="Maximize"
                 onClick={() => setListModal("pdc")}
               >
                 <Maximize2 className="size-4" />
               </Button>
-              <CalendarClock className="size-4 shrink-0 text-sky-600" />
+              <CalendarClock className="size-4 shrink-0 text-emerald-600" />
             </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
@@ -515,7 +515,7 @@ function Dashboard() {
               upcoming.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-sky-200 bg-white/80 px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{tenantName(c.tenantId)}</p>
@@ -533,7 +533,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-violet-50 to-white shadow-sm">
+        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-emerald-900">Upcoming renewals</CardTitle>
             <div className="flex items-center gap-1">
@@ -541,7 +541,7 @@ function Dashboard() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 text-emerald-700 hover:bg-violet-100"
+                className="size-8 text-emerald-700 hover:bg-emerald-100"
                 title="Maximize"
                 onClick={() => setListModal("renewals")}
               >
@@ -630,7 +630,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-amber-50 to-white shadow-sm">
+        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-emerald-900">Vacant units</CardTitle>
             <div className="flex items-center gap-1">
@@ -644,7 +644,7 @@ function Dashboard() {
               >
                 <Maximize2 className="size-4" />
               </Button>
-              <DoorOpen className="size-4 shrink-0 text-amber-600" />
+              <DoorOpen className="size-4 shrink-0 text-emerald-600" />
             </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
@@ -654,7 +654,7 @@ function Dashboard() {
               vacant.map((u) => (
                 <div
                   key={u.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">Flat {u.flatNo}</p>
@@ -690,7 +690,7 @@ function Dashboard() {
                 upcoming.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-sky-200 bg-emerald-50/50 px-3 py-2"
+                    className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2"
                   >
                     <div className="min-w-0 break-words">
                       <p className="text-sm font-medium">{tenantName(c.tenantId)}</p>
@@ -715,7 +715,7 @@ function Dashboard() {
                   return (
                     <div
                       key={c.id}
-                      className="flex items-start justify-between gap-3 rounded-lg border border-violet-200 bg-emerald-50/50 px-3 py-2"
+                      className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2"
                     >
                       <div className="min-w-0 break-words">
                         <p className="text-sm font-medium">
@@ -772,7 +772,7 @@ function Dashboard() {
                 vacant.map((u) => (
                   <div
                     key={u.id}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2"
+                    className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2"
                   >
                     <div className="min-w-0 break-words">
                       <p className="text-sm font-medium">Flat {u.flatNo}</p>
