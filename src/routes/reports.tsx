@@ -329,14 +329,13 @@ function ReportsPage() {
   );
 
   const vacant = useMemo(() => {
+    // Vacant only when no Active/Draft lease — not when period merely ended by date
     const occupied = new Set(
       data.contracts
-        .filter(
-          (c) =>
-            (c.status || "Active") === "Active" &&
-            c.startDate <= today &&
-            c.endDate >= today,
-        )
+        .filter((c) => {
+          const st = c.status || "Active";
+          return st === "Active" || st === "Draft";
+        })
         .map((c) => c.unitId)
         .filter(Boolean),
     );
@@ -346,7 +345,7 @@ function ReportsPage() {
       if (fq && !(u.flatNo || "").toLowerCase().includes(fq)) return false;
       return true;
     });
-  }, [data.units, data.contracts, today, flatSearch]);
+  }, [data.units, data.contracts, flatSearch]);
 
   const depositRows = useMemo(() => {
     const rows = data.cheques
