@@ -493,7 +493,7 @@ function Dashboard() {
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="flex flex-col border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base text-sky-900">Upcoming PDCs (120 days)</CardTitle>
+            <CardTitle className="text-base text-emerald-900">Upcoming PDCs (120 days)</CardTitle>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
@@ -535,7 +535,7 @@ function Dashboard() {
 
         <Card className="flex flex-col border-2 border-violet-300 bg-gradient-to-br from-violet-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base text-violet-900">Upcoming renewals</CardTitle>
+            <CardTitle className="text-base text-emerald-900">Upcoming renewals</CardTitle>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
@@ -632,7 +632,7 @@ function Dashboard() {
 
         <Card className="flex flex-col border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base text-amber-900">Vacant units</CardTitle>
+            <CardTitle className="text-base text-emerald-900">Vacant units</CardTitle>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
