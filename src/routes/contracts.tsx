@@ -228,10 +228,11 @@ function ContractsPage() {
 
   const onUnitChange = (unitId: string) => {
     const unit = data.units.find((u) => u.id === unitId);
+    // Always take bedroom type from the Unit master
     setForm((f) => ({
       ...f,
       unitId,
-      bedroomType: unit?.bedroomType || f.bedroomType,
+      bedroomType: (unit?.bedroomType || "").trim(),
     }));
   };
 
@@ -522,20 +523,30 @@ function ContractsPage() {
             <div>
               <Label>Bedroom Type</Label>
               <Select
-                value={form.bedroomType}
+                value={form.bedroomType || undefined}
                 onValueChange={(v) => setForm({ ...form, bedroomType: v })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder="Select unit first — type fills from unit" />
                 </SelectTrigger>
                 <SelectContent>
-                  {bedroomOptions.map((t) => (
+                  {Array.from(
+                    new Set(
+                      [
+                        ...bedroomOptions,
+                        ...(form.bedroomType ? [form.bedroomType] : []),
+                      ].filter(Boolean),
+                    ),
+                  ).map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Default from Unit. Change only if needed.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
