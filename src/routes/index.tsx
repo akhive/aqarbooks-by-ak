@@ -491,7 +491,7 @@ function Dashboard() {
 
       {/* Four equal cards — fixed height + scroll */}
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-sky-50 to-white shadow-sm">
+        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-emerald-900">Upcoming PDCs (120 days)</CardTitle>
             <div className="flex items-center gap-1">
@@ -547,7 +547,7 @@ function Dashboard() {
               >
                 <Maximize2 className="size-4" />
               </Button>
-              <CalendarClock className="size-4 shrink-0 text-violet-600" />
+              <CalendarClock className="size-4 shrink-0 text-emerald-600" />
             </div>
           </CardHeader>
           <CardContent className="h-72 space-y-2 overflow-y-auto pt-0">
