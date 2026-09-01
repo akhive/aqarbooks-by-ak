@@ -103,6 +103,7 @@ function ContractDetailPage() {
     deleteCheque,
     updateContract,
     addContract,
+    deleteContract,
   } = useStore();
 
   const contract = data.contracts.find((c) => c.id === contractId);
@@ -501,6 +502,23 @@ function ContractDetailPage() {
     }
   };
 
+  const deleteLease = async () => {
+    if (
+      !confirm(
+        `Delete lease ${contract.leaseNo || ""}?\n\nLinked PDCs for this lease will also be removed.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteContract(contract.id);
+      toast.success("Lease deleted");
+      navigate({ to: "/contracts" });
+    } catch (e: any) {
+      toast.error(e.message || "Delete failed");
+    }
+  };
+
   const statusColor =
     contract.status === "Draft"
       ? "bg-amber-100 text-amber-900"
@@ -713,6 +731,10 @@ function ContractDetailPage() {
               </Button>
               <Button variant="outline" onClick={() => setHistoryOpen(true)}>
                 Contract history
+              </Button>
+              <Button variant="destructive" onClick={deleteLease}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
               </Button>
               {!isDraft && (
                 <Button variant="outline" onClick={openRenew}>
