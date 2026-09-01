@@ -370,10 +370,10 @@ function Dashboard() {
         <Stat
           label="Occupancy"
           value={`${occupiedCount}/${totalUnits}`}
-          hint={`${activeLeaseCount} Active · ${coveringToday} in period today · ${vacant.length} vacant (after End/Cancel/Break)`}
+          hint={}
           icon={DoorOpen}
           tone={occupiedCount > 0 ? "positive" : "default"}
-          palette="blue"
+          palette="emerald"
         />
         <Stat
           label="Average Yearly Rental (AED)"
@@ -381,7 +381,7 @@ function Dashboard() {
           hint={rentalHint}
           icon={TrendingUp}
           tone={yoyChange >= 0 ? "positive" : "negative"}
-          palette="amber"
+          palette="emerald"
         />
       </div>
 
