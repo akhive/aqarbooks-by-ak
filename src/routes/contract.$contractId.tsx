@@ -109,6 +109,20 @@ function ContractDetailPage() {
   const tenant = data.tenants.find((t) => t.id === contract?.tenantId);
   const unit = data.units.find((u) => u.id === contract?.unitId);
 
+  const unitHistory = useMemo(() => {
+    if (!contract?.unitId) return [];
+    return data.contracts
+      .filter(
+        (c) =>
+          c.unitId === contract.unitId &&
+          (c.status || "Active") !== "Draft",
+      )
+      .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+  }, [data.contracts, contract?.unitId]);
+
+  const tenantName = (id: string) =>
+    data.tenants.find((t) => t.id === id)?.name ?? "—";
+
   const isDraft = contract?.status === "Draft";
   const isActive = (contract?.status || "Active") === "Active";
   const isClosed =
@@ -857,6 +871,77 @@ function ContractDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="no-print mb-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Contract history — Flat {unit?.flatNo || "—"}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              All leases on this unit (renewals and previous tenants). Newest first.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lease No</TableHead>
+                  <TableHead>Tenant</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Period</TableHead>
+                  <TableHead className="text-right">Rent</TableHead>
+                  <TableHead className="text-right">Deposit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {unitHistory.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      No other leases for this unit.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {unitHistory.map((c) => {
+                  const isCurrent = c.id === contract.id;
+                  return (
+                    <TableRow
+                      key={c.id}
+                      className={isCurrent ? "bg-emerald-50/80" : undefined}
+                    >
+                      <TableCell className="font-medium">
+                        {isCurrent ? (
+                          <span>
+                            {c.leaseNo || "—"}{" "}
+                            <span className="text-xs font-normal text-emerald-700">
+                              (this lease)
+                            </span>
+                          </span>
+                        ) : (
+                          <Link
+                            to="/contract/$contractId"
+                            params={{ contractId: c.id }}
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {c.leaseNo || "View"}
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell>{tenantName(c.tenantId)}</TableCell>
+                      <TableCell>{c.status || "Active"}</TableCell>
+                      <TableCell>
+                        {fmtDate(c.startDate)} → {fmtDate(c.endedAt || c.endDate)}
+                      </TableCell>
+                      <TableCell className="text-right">{currency(c.rent)}</TableCell>
+                      <TableCell className="text-right">
+                        {currency(c.depositAmount || 0)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
         <ChequeTable rows={rentCheques} title="Payment schedule (Rent cheques)" />
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
