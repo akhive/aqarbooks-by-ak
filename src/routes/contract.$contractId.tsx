@@ -194,6 +194,7 @@ function ContractDetailPage() {
   const [renewStart, setRenewStart] = useState("");
   const [renewEnd, setRenewEnd] = useState("");
   const [renewLeaseNo, setRenewLeaseNo] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     setBanks(loadBanks());
@@ -710,6 +711,9 @@ function ContractDetailPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 Split deposit
               </Button>
+              <Button variant="outline" onClick={() => setHistoryOpen(true)}>
+                Contract history
+              </Button>
               {!isDraft && (
                 <Button variant="outline" onClick={openRenew}>
                   <RefreshCw className="mr-2 h-4 w-4" />
@@ -871,77 +875,6 @@ function ContractDetailPage() {
             </CardContent>
           </Card>
         </div>
-
-        <Card className="no-print mb-6">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              Contract history — Flat {unit?.flatNo || "—"}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              All leases on this unit (renewals and previous tenants). Newest first.
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Lease No</TableHead>
-                  <TableHead>Tenant</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead className="text-right">Rent</TableHead>
-                  <TableHead className="text-right">Deposit</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {unitHistory.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                      No other leases for this unit.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {unitHistory.map((c) => {
-                  const isCurrent = c.id === contract.id;
-                  return (
-                    <TableRow
-                      key={c.id}
-                      className={isCurrent ? "bg-emerald-50/80" : undefined}
-                    >
-                      <TableCell className="font-medium">
-                        {isCurrent ? (
-                          <span>
-                            {c.leaseNo || "—"}{" "}
-                            <span className="text-xs font-normal text-emerald-700">
-                              (this lease)
-                            </span>
-                          </span>
-                        ) : (
-                          <Link
-                            to="/contract/$contractId"
-                            params={{ contractId: c.id }}
-                            className="text-primary underline-offset-2 hover:underline"
-                          >
-                            {c.leaseNo || "View"}
-                          </Link>
-                        )}
-                      </TableCell>
-                      <TableCell>{tenantName(c.tenantId)}</TableCell>
-                      <TableCell>{c.status || "Active"}</TableCell>
-                      <TableCell>
-                        {fmtDate(c.startDate)} → {fmtDate(c.endedAt || c.endDate)}
-                      </TableCell>
-                      <TableCell className="text-right">{currency(c.rent)}</TableCell>
-                      <TableCell className="text-right">
-                        {currency(c.depositAmount || 0)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
 
         <ChequeTable rows={rentCheques} title="Payment schedule (Rent cheques)" />
         <ChequeTable rows={depositCheques} title="Deposit cheques" />
@@ -1368,6 +1301,84 @@ function ContractDetailPage() {
               Print / PDF
             </Button>
             <Button variant="outline" onClick={() => setViewSettlementOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      
+      {/* Contract history popup */}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="no-print max-h-[90vh] max-w-3xl overflow-hidden p-0">
+          <DialogHeader className="border-b px-4 py-3">
+            <DialogTitle>
+              Contract history — Flat {unit?.flatNo || "—"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Lease No</TableHead>
+                  <TableHead>Tenant</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Period</TableHead>
+                  <TableHead className="text-right">Rent</TableHead>
+                  <TableHead className="pr-4 text-right">Deposit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {unitHistory.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      No leases for this unit.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {unitHistory.map((c) => {
+                  const isCurrent = c.id === contract.id;
+                  return (
+                    <TableRow
+                      key={c.id}
+                      className={isCurrent ? "bg-emerald-50/80" : undefined}
+                    >
+                      <TableCell className="pl-4 font-medium">
+                        {isCurrent ? (
+                          <span>
+                            {c.leaseNo || "—"}{" "}
+                            <span className="text-xs font-normal text-emerald-700">
+                              (this lease)
+                            </span>
+                          </span>
+                        ) : (
+                          <Link
+                            to="/contract/$contractId"
+                            params={{ contractId: c.id }}
+                            className="text-primary underline-offset-2 hover:underline"
+                            onClick={() => setHistoryOpen(false)}
+                          >
+                            {c.leaseNo || "View"}
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell>{tenantName(c.tenantId)}</TableCell>
+                      <TableCell>{c.status || "Active"}</TableCell>
+                      <TableCell>
+                        {fmtDate(c.startDate)} → {fmtDate(c.endedAt || c.endDate)}
+                      </TableCell>
+                      <TableCell className="text-right">{currency(c.rent)}</TableCell>
+                      <TableCell className="pr-4 text-right">
+                        {currency(c.depositAmount || 0)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter className="border-t px-4 py-3">
+            <Button variant="outline" onClick={() => setHistoryOpen(false)}>
               Close
             </Button>
           </DialogFooter>
