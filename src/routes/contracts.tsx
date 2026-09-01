@@ -393,13 +393,12 @@ function ContractsPage() {
                 <TableHead>
                   <SortBtn k="rent" label="Rent" />
                 </TableHead>
-                <TableHead className="w-36"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                     No contracts found.
                   </TableCell>
                 </TableRow>
@@ -435,27 +434,6 @@ function ContractsPage() {
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                   </TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" title="Renew" onClick={() => startRenew(c)}>
-                        <RefreshCw className="h-4 w-4 text-primary" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="History"
-                        onClick={() => setHistoryTenantId(c.tenantId)}
-                      >
-                        <History className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={() => remove(c.id, c.leaseNo)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
