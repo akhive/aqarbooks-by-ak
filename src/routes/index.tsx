@@ -370,7 +370,6 @@ function Dashboard() {
         <Stat
           label="Occupancy"
           value={`${occupiedCount}/${totalUnits}`}
-          hint={}
           icon={DoorOpen}
           tone={occupiedCount > 0 ? "positive" : "default"}
           palette="emerald"
