@@ -512,9 +512,11 @@ function ContractDetailPage() {
 
   const ChequeTable = ({ rows, title }: { rows: Cheque[]; title: string }) => (
     <Card className="no-print mb-4">
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
+      {title ? (
+        <CardHeader>
+          <CardTitle className="text-base">{title}</CardTitle>
+        </CardHeader>
+      ) : null}
       <CardContent className="p-0">
         <Table>
           <TableHeader>
@@ -703,14 +705,6 @@ function ContractDetailPage() {
           action={
             <div className="flex flex-wrap gap-2">
               {isDraft && <Button onClick={submitContract}>Submit contract</Button>}
-              <Button variant="outline" onClick={() => openSplit("rent")}>
-                <Plus className="mr-2 h-4 w-4" />
-                Split rent PDCs
-              </Button>
-              <Button variant="outline" onClick={() => openSplit("deposit")}>
-                <Plus className="mr-2 h-4 w-4" />
-                Split deposit
-              </Button>
               <Button variant="outline" onClick={() => setHistoryOpen(true)}>
                 Contract history
               </Button>
@@ -876,8 +870,23 @@ function ContractDetailPage() {
           </Card>
         </div>
 
-        <ChequeTable rows={rentCheques} title="Payment schedule (Rent cheques)" />
-        <ChequeTable rows={depositCheques} title="Deposit cheques" />
+        <div className="no-print mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-base font-semibold">Payment schedule (Rent cheques)</h3>
+          <Button variant="outline" size="sm" onClick={() => openSplit("rent")}>
+            <Plus className="mr-2 h-4 w-4" />
+            Split rent PDCs
+          </Button>
+        </div>
+        <ChequeTable rows={rentCheques} title="" />
+
+        <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-base font-semibold">Deposit cheques</h3>
+          <Button variant="outline" size="sm" onClick={() => openSplit("deposit")}>
+            <Plus className="mr-2 h-4 w-4" />
+            Split deposit
+          </Button>
+        </div>
+        <ChequeTable rows={depositCheques} title="" />
       </div>
 
       {/* Split */}
