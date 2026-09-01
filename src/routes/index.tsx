@@ -365,7 +365,7 @@ function Dashboard() {
           }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
-          palette={profit >= 0 ? "teal" : "rose"}
+          palette={profit >= 0 ? "emerald" : "emerald"}
         />
         <Stat
           label="Occupancy"
@@ -385,7 +385,7 @@ function Dashboard() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <Card className="border-2 border-teal-300 bg-gradient-to-br from-teal-50/80 to-white shadow-sm lg:col-span-2">
+        <Card className="border-2 border-emerald-300 bg-gradient-to-br from-emerald-50/80 to-white shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">PDC received trend ({year})</CardTitle>
           </CardHeader>
@@ -491,15 +491,15 @@ function Dashboard() {
 
       {/* Four equal cards — fixed height + scroll */}
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="flex flex-col border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-white shadow-sm">
+        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-sky-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base text-sky-900">Upcoming PDCs (120 days)</CardTitle>
+            <CardTitle className="text-base text-emerald-900">Upcoming PDCs (120 days)</CardTitle>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 text-sky-700 hover:bg-sky-100"
+                className="size-8 text-emerald-700 hover:bg-sky-100"
                 title="Maximize"
                 onClick={() => setListModal("pdc")}
               >
@@ -533,7 +533,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-col border-2 border-violet-300 bg-gradient-to-br from-violet-50 to-white shadow-sm">
+        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-violet-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-emerald-900">Upcoming renewals</CardTitle>
             <div className="flex items-center gap-1">
@@ -541,7 +541,7 @@ function Dashboard() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 text-violet-700 hover:bg-violet-100"
+                className="size-8 text-emerald-700 hover:bg-violet-100"
                 title="Maximize"
                 onClick={() => setListModal("renewals")}
               >
@@ -559,7 +559,7 @@ function Dashboard() {
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-violet-200 bg-white/80 px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-2"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">
@@ -630,7 +630,7 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-col border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white shadow-sm">
+        <Card className="flex flex-col border-2 border-emerald-300 bg-gradient-to-br from-amber-50 to-white shadow-sm">
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base text-emerald-900">Vacant units</CardTitle>
             <div className="flex items-center gap-1">
@@ -638,7 +638,7 @@ function Dashboard() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 text-amber-700 hover:bg-amber-100"
+                className="size-8 text-emerald-700 hover:bg-emerald-100"
                 title="Maximize"
                 onClick={() => setListModal("vacant")}
               >
@@ -690,7 +690,7 @@ function Dashboard() {
                 upcoming.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-start justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-2"
+                    className="flex items-start justify-between gap-3 rounded-lg border border-sky-200 bg-emerald-50/50 px-3 py-2"
                   >
                     <div className="min-w-0 break-words">
                       <p className="text-sm font-medium">{tenantName(c.tenantId)}</p>
@@ -715,7 +715,7 @@ function Dashboard() {
                   return (
                     <div
                       key={c.id}
-                      className="flex items-start justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2"
+                      className="flex items-start justify-between gap-3 rounded-lg border border-violet-200 bg-emerald-50/50 px-3 py-2"
                     >
                       <div className="min-w-0 break-words">
                         <p className="text-sm font-medium">
