@@ -103,6 +103,7 @@ function ContractDetailPage() {
     deleteCheque,
     updateContract,
     addContract,
+    deleteContract,
   } = useStore();
 
   const contract = data.contracts.find((c) => c.id === contractId);
@@ -195,6 +196,7 @@ function ContractDetailPage() {
   const [renewEnd, setRenewEnd] = useState("");
   const [renewLeaseNo, setRenewLeaseNo] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     setBanks(loadBanks());
@@ -501,6 +503,17 @@ function ContractDetailPage() {
     }
   };
 
+  const deleteLease = async () => {
+    try {
+      await deleteContract(contract.id);
+      setDeleteOpen(false);
+      toast.success("Lease deleted");
+      navigate({ to: "/contracts" });
+    } catch (e: any) {
+      toast.error(e.message || "Delete failed");
+    }
+  };
+
   const statusColor =
     contract.status === "Draft"
       ? "bg-amber-100 text-amber-900"
@@ -512,11 +525,9 @@ function ContractDetailPage() {
 
   const ChequeTable = ({ rows, title }: { rows: Cheque[]; title: string }) => (
     <Card className="no-print mb-4">
-      {title ? (
-        <CardHeader>
-          <CardTitle className="text-base">{title}</CardTitle>
-        </CardHeader>
-      ) : null}
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
@@ -705,6 +716,14 @@ function ContractDetailPage() {
           action={
             <div className="flex flex-wrap gap-2">
               {isDraft && <Button onClick={submitContract}>Submit contract</Button>}
+              <Button variant="outline" onClick={() => openSplit("rent")}>
+                <Plus className="mr-2 h-4 w-4" />
+                Split rent PDCs
+              </Button>
+              <Button variant="outline" onClick={() => openSplit("deposit")}>
+                <Plus className="mr-2 h-4 w-4" />
+                Split deposit
+              </Button>
               <Button variant="outline" onClick={() => setHistoryOpen(true)}>
                 Contract history
               </Button>
@@ -731,7 +750,17 @@ function ContractDetailPage() {
                   <Button variant="destructive" onClick={() => openBreak("Broken")}>
                     Break Contract
                   </Button>
+                  <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </Button>
                 </>
+              )}
+              {!isActive && (
+                <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
               )}
             </div>
           }
@@ -870,23 +899,8 @@ function ContractDetailPage() {
           </Card>
         </div>
 
-        <div className="no-print mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-base font-semibold">Payment schedule (Rent cheques)</h3>
-          <Button variant="outline" size="sm" onClick={() => openSplit("rent")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Split rent PDCs
-          </Button>
-        </div>
-        <ChequeTable rows={rentCheques} title="" />
-
-        <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-base font-semibold">Deposit cheques</h3>
-          <Button variant="outline" size="sm" onClick={() => openSplit("deposit")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Split deposit
-          </Button>
-        </div>
-        <ChequeTable rows={depositCheques} title="" />
+        <ChequeTable rows={rentCheques} title="Payment schedule (Rent cheques)" />
+        <ChequeTable rows={depositCheques} title="Deposit cheques" />
       </div>
 
       {/* Split */}
@@ -1317,6 +1331,34 @@ function ContractDetailPage() {
       </Dialog>
 
       
+      
+      {/* Delete confirmation */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete lease {contract.leaseNo || ""}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will permanently remove the lease and all linked PDCs / deposit cheques for this
+            contract. This cannot be undone from the app (use Backup if you need recovery).
+          </p>
+          <p className="text-sm">
+            Tenant: <strong>{tenant?.name || "—"}</strong>
+            <br />
+            Unit: <strong>{unit?.flatNo || "—"}</strong>
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={deleteLease}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Yes, delete lease
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Contract history popup */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="no-print max-h-[90vh] max-w-3xl overflow-hidden p-0">
