@@ -229,9 +229,14 @@ function Dashboard() {
   }, [data.cheques, data.contracts, data.expenses, year]);
 
   const { occupiedCount, vacant, totalUnits, coveringToday, activeLeaseCount } = useMemo(() => {
-    const statusActive = data.contracts.filter(
-      (c) => (c.status || "Active").trim() === "Active",
-    );
+    // Occupied = status Active or Draft (user has not End/Vacate/Cancel/Broken)
+    // Period ended by date but still Active = still occupied (renewal delayed)
+    const holding = data.contracts.filter((c) => {
+      const st = (c.status || "Active").trim();
+      return st === "Active" || st === "Draft";
+    });
+
+    const statusActive = holding.filter((c) => (c.status || "Active").trim() === "Active");
 
     const covering = statusActive.filter((c) => {
       if (c.startDate && c.startDate > today) return false;
@@ -240,7 +245,7 @@ function Dashboard() {
     });
 
     const occupiedUnitIds = new Set(
-      covering.map((c) => c.unitId).filter(Boolean) as string[],
+      holding.map((c) => c.unitId).filter(Boolean) as string[],
     );
 
     const vacantList = data.units.filter((u) => !occupiedUnitIds.has(u.id));
@@ -323,7 +328,7 @@ function Dashboard() {
     <AppShell>
       <PageHeader
         title="Dashboard"
-        description={`${year} · App ${APP_VERSION}`}
+        description={`Accrual performance for ${year} · App ${APP_VERSION}`}
         action={
           <Link
             to="/backup"
@@ -348,7 +353,7 @@ function Dashboard() {
           value={currency(expense)}
           icon={ArrowDownRight}
           tone="negative"
-          palette="emerald"
+          palette="rose"
         />
         <Stat
           label="Net profit"
@@ -360,15 +365,15 @@ function Dashboard() {
           }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
-          palette={profit >= 0 ? "emerald" : "emerald"}
+          palette={profit >= 0 ? "teal" : "rose"}
         />
         <Stat
           label="Occupancy"
           value={`${occupiedCount}/${totalUnits}`}
-          hint={`${coveringToday} lease(s) covering today · ${activeLeaseCount} status Active · ${vacant.length} vacant`}
+          hint={`${activeLeaseCount} Active · ${coveringToday} in period today · ${vacant.length} vacant (after End/Cancel/Break)`}
           icon={DoorOpen}
           tone={occupiedCount > 0 ? "positive" : "default"}
-          palette="emerald"
+          palette="blue"
         />
         <Stat
           label="Average Yearly Rental (AED)"
@@ -376,7 +381,7 @@ function Dashboard() {
           hint={rentalHint}
           icon={TrendingUp}
           tone={yoyChange >= 0 ? "positive" : "negative"}
-          palette="emerald"
+          palette="amber"
         />
       </div>
 
