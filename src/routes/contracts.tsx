@@ -94,6 +94,27 @@ function ContractsPage() {
     return [...set].sort();
   }, [data.units]);
 
+  /** Active or Draft lease = unit occupied (not offered for a new lease). */
+  const occupiedUnitIds = useMemo(() => {
+    const ids = new Set<string>();
+    data.contracts.forEach((c) => {
+      const st = c.status || "Active";
+      if ((st === "Active" || st === "Draft") && c.unitId) ids.add(c.unitId);
+    });
+    return ids;
+  }, [data.contracts]);
+
+  const vacantUnits = useMemo(() => {
+    return data.units.filter((u) => {
+      if (!occupiedUnitIds.has(u.id)) return true;
+      // Edit: keep this contract's unit
+      if (editing && form.unitId === u.id) return true;
+      // Renew form: same unit still Active
+      if (!editing && form.previousRent > 0 && form.unitId === u.id) return true;
+      return false;
+    });
+  }, [data.units, occupiedUnitIds, editing, form.unitId, form.previousRent]);
+
   const filteredTenants = useMemo(() => {
     const q = tenantSearchText.trim().toLowerCase();
     if (!q) return data.tenants;
@@ -217,6 +238,18 @@ function ContractsPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.tenantId) return setError("Please select a tenant.");
+    if (!form.unitId) return setError("Please select a vacant unit.");
+    const isRenewForm = !editing && form.previousRent > 0;
+    const unitBusy = data.contracts.some((c) => {
+      if (c.unitId !== form.unitId) return false;
+      if (editing && c.id === editing) return false;
+      if (isRenewForm) return false;
+      const st = c.status || "Active";
+      return st === "Active" || st === "Draft";
+    });
+    if (unitBusy) {
+      return setError("This unit already has an Active or Draft lease. Choose a vacant unit.");
+    }
     if (!form.startDate || !form.endDate) return setError("Start and End dates are required.");
     if (form.endDate < form.startDate) return setError("End date must be after start date.");
     if (form.rent <= 0) return setError("Rent must be greater than zero.");
@@ -460,19 +493,31 @@ function ContractsPage() {
               </Select>
             </div>
             <div>
-              <Label>Unit / Flat</Label>
+              <Label>Unit / Flat *</Label>
               <Select value={form.unitId} onValueChange={onUnitChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select unit" />
+                  <SelectValue
+                    placeholder={vacantUnits.length ? "Select vacant unit" : "No vacant units"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {data.units.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.flatNo}
-                    </SelectItem>
-                  ))}
+                  {vacantUnits.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      All units have an Active or Draft lease.
+                    </div>
+                  ) : (
+                    vacantUnits.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.flatNo}
+                        {u.bedroomType ? ` · ${u.bedroomType}` : ""}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Only vacant units are listed (no Active / Draft lease).
+              </p>
             </div>
             <div>
               <Label>Bedroom Type</Label>
