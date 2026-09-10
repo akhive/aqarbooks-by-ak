@@ -1091,10 +1091,6 @@ function ContractDetailPage() {
                 <Button type="button" variant="outline" size="sm" onClick={autoFillChequeNos}>
                   Auto-fill cheque nos from first
                 </Button>
-                <p className="text-xs text-muted-foreground">
-                  Empty rows fill as 000022, 000023… Editing the first later does not change the
-                  others. Amounts must equal {currency(baseAmount)} to save.
-                </p>
               </div>
               <p className="text-sm font-medium">
                 Total:{" "}
