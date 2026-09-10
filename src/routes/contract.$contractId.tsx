@@ -91,6 +91,22 @@ function addDays(iso: string, days: number) {
   return toYmd(d);
 }
 
+/** Keep leading zeros: 000021 + 1 → 000022 */
+function nextChequeNo(first: string, offset: number): string {
+  const raw = (first || "").trim();
+  if (!raw) return "";
+  const m = raw.match(/^(.*?)(\d+)$/);
+  if (!m) return offset === 0 ? raw : `${raw}${offset}`;
+  const prefix = m[1];
+  const digits = m[2];
+  const n = parseInt(digits, 10) + offset;
+  if (Number.isNaN(n) || n < 0) return raw;
+  return prefix + String(n).padStart(digits.length, "0");
+}
+
+type SplitRow = { date: string; chequeNo: string; amount: number };
+
+
 function ContractDetailPage() {
   const { contractId } = Route.useParams();
   const navigate = useNavigate();
@@ -168,6 +184,7 @@ function ContractDetailPage() {
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitKind, setSplitKind] = useState<"rent" | "deposit">("rent");
   const [splitCount, setSplitCount] = useState(4);
+  const [splitRows, setSplitRows] = useState<SplitRow[]>([]);
 
   const [editCheque, setEditCheque] = useState<Cheque | null>(null);
   const [chequeDate, setChequeDate] = useState("");
@@ -284,7 +301,6 @@ function ContractDetailPage() {
   const rentTotal = rentCheques.reduce((s, c) => s + c.amount, 0);
   const depTotal = depositCheques.reduce((s, c) => s + c.amount, 0);
   const baseAmount = splitKind === "rent" ? contract.rent : contract.depositAmount || 0;
-  const previewDates = splitDates(contract.startDate, contract.endDate, splitCount);
 
   const savedActual = contract.actualRent || 0;
   const savedPenalty = contract.penalty || 0;
@@ -293,10 +309,57 @@ function ContractDetailPage() {
   const savedBalance =
     savedActual + savedPenalty + savedExtra - receivedTotal - (depositRefund || contract.depositAmount || 0);
 
+  const buildSplitRows = (
+    kind: "rent" | "deposit",
+    count: number,
+    prev?: SplitRow[],
+  ): SplitRow[] => {
+    const total = kind === "rent" ? contract.rent : contract.depositAmount || 0;
+    const dates = splitDates(contract.startDate, contract.endDate, count);
+    const each = count > 0 ? Math.round((total / count) * 100) / 100 : 0;
+    let remaining = total;
+    const firstNo = prev?.[0]?.chequeNo || "";
+    return Array.from({ length: count }, (_, i) => {
+      const amount =
+        i === count - 1 ? Math.round(remaining * 100) / 100 : each;
+      remaining -= amount;
+      return {
+        date: dates[i] || "",
+        chequeNo: firstNo ? nextChequeNo(firstNo, i) : "",
+        amount: prev?.[i]?.amount != null && prev.length === count ? prev[i].amount : amount,
+      };
+    }).map((row, i, arr) => {
+      // last row absorbs rounding from equal split when rebuilding amounts
+      if (prev && prev.length === count) return row;
+      return row;
+    });
+  };
+
   const openSplit = (kind: "rent" | "deposit") => {
+    const count = kind === "deposit" ? 1 : 4;
     setSplitKind(kind);
-    setSplitCount(kind === "deposit" ? 1 : 4);
+    setSplitCount(count);
+    setSplitRows(buildSplitRows(kind, count));
     setSplitOpen(true);
+  };
+
+  const onSplitCountChange = (n: number) => {
+    setSplitCount(n);
+    setSplitRows(buildSplitRows(splitKind, n, splitRows));
+  };
+
+  const updateSplitRow = (index: number, patch: Partial<SplitRow>) => {
+    setSplitRows((rows) => {
+      const next = rows.map((r, i) => (i === index ? { ...r, ...patch } : r));
+      // First cheque no drives sequential numbers for the rest
+      if (index === 0 && patch.chequeNo !== undefined) {
+        const first = patch.chequeNo;
+        for (let i = 1; i < next.length; i++) {
+          next[i] = { ...next[i], chequeNo: nextChequeNo(first, i) };
+        }
+      }
+      return next;
+    });
   };
 
   const generateSplit = async () => {
@@ -304,27 +367,44 @@ function ContractDetailPage() {
       toast.error(splitKind === "deposit" ? "Set deposit amount first" : "Rent is zero");
       return;
     }
+    if (splitRows.length === 0) {
+      toast.error("No cheque rows");
+      return;
+    }
+    for (let i = 0; i < splitRows.length; i++) {
+      const r = splitRows[i];
+      if (!r.date) {
+        toast.error(`Row ${i + 1}: date required`);
+        return;
+      }
+      if (!r.amount || r.amount <= 0) {
+        toast.error(`Row ${i + 1}: amount required`);
+        return;
+      }
+    }
+    const sum = Math.round(splitRows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
+    if (Math.abs(sum - baseAmount) > 0.05) {
+      toast.error(
+        `Amounts total ${currency(sum)} but ${splitKind} is ${currency(baseAmount)}. Adjust rows.`,
+      );
+      return;
+    }
     setSaving(true);
     try {
-      const dates = splitDates(contract.startDate, contract.endDate, splitCount);
-      const each = Math.round((baseAmount / splitCount) * 100) / 100;
-      let remaining = baseAmount;
-      for (let i = 0; i < splitCount; i++) {
-        const amount = i === splitCount - 1 ? Math.round(remaining * 100) / 100 : each;
-        remaining -= amount;
+      for (const r of splitRows) {
         await addCheque({
           tenantId: contract.tenantId,
           contractId: contract.id,
-          chequeDate: dates[i],
-          chequeNo: `${contract.leaseNo || "L"}-${splitKind === "deposit" ? "D" : "R"}${i + 1}`,
+          chequeDate: r.date,
+          chequeNo: r.chequeNo || "",
           bank: "",
-          amount,
+          amount: r.amount,
           status: "PDC",
           reconciled: false,
           kind: splitKind,
         });
       }
-      toast.success(`${splitCount} ${splitKind} cheque(s) created`);
+      toast.success(`${splitRows.length} ${splitKind} cheque(s) created`);
       setSplitOpen(false);
       await refresh();
     } catch (e: any) {
@@ -908,7 +988,7 @@ function ContractDetailPage() {
 
       {/* Split */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
-        <DialogContent className="no-print">
+        <DialogContent className="no-print max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               Split {splitKind === "deposit" ? "deposit" : "rent"} into PDCs
@@ -921,7 +1001,10 @@ function ContractDetailPage() {
             </p>
             <div>
               <Label>Number of cheques</Label>
-              <Select value={String(splitCount)} onValueChange={(v) => setSplitCount(Number(v))}>
+              <Select
+                value={String(splitCount)}
+                onValueChange={(v) => onSplitCountChange(Number(v))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -934,12 +1017,51 @@ function ContractDetailPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="rounded-md bg-muted p-3 text-sm">
-              {previewDates.map((d, i) => (
-                <div key={`${d}-${i}`}>
-                  {i + 1}. {fmtDate(d)}
+
+            <div className="space-y-2">
+              <div className="grid grid-cols-[28px_1fr_1fr_1fr] gap-2 px-1 text-xs font-medium text-muted-foreground">
+                <span>#</span>
+                <span>Date</span>
+                <span>Cheque No</span>
+                <span className="text-right">Amount</span>
+              </div>
+              {splitRows.map((row, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2"
+                >
+                  <span className="text-sm text-muted-foreground">{i + 1}</span>
+                  <Input
+                    type="date"
+                    value={row.date}
+                    onChange={(e) => updateSplitRow(i, { date: e.target.value })}
+                  />
+                  <Input
+                    value={row.chequeNo}
+                    placeholder={i === 0 ? "e.g. 000021" : "auto"}
+                    onChange={(e) => updateSplitRow(i, { chequeNo: e.target.value })}
+                  />
+                  <Input
+                    type="number"
+                    className="text-right"
+                    value={row.amount || ""}
+                    onChange={(e) =>
+                      updateSplitRow(i, { amount: Number(e.target.value) })
+                    }
+                  />
                 </div>
               ))}
+              <p className="text-xs text-muted-foreground">
+                Enter first cheque number — the rest fill as 000022, 000023… You can edit any
+                row. Total must match {currency(baseAmount)}.
+              </p>
+              <p className="text-sm font-medium">
+                Total:{" "}
+                {currency(
+                  Math.round(splitRows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
+                )}{" "}
+                / {currency(baseAmount)}
+              </p>
             </div>
           </div>
           <DialogFooter>
