@@ -134,8 +134,8 @@ function ChequesPage() {
   return (
     <AppShell>
       <PageHeader
-        title="Cheques (PDC)"
-        description={`${filtered.length} cheque(s) · Linked PDCs cannot be deleted here — use the lease card`}
+        title="Cheques"
+        description={}
       />
 
       <Card className="mb-4">
