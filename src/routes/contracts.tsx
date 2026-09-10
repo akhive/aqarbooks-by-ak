@@ -32,7 +32,7 @@ export const Route = createFileRoute("/contracts")({
 });
 
 type Form = Omit<Contract, "id">;
-type SortKey = "leaseNo" | "unit" | "period" | "rent";
+type SortKey = "leaseNo" | "unit" | "start" | "end" | "rent" | "type" | "status";
 
 const empty: Form = {
   leaseNo: "",
@@ -72,6 +72,12 @@ function ContractsPage() {
   const [tenantFilter, setTenantFilter] = useState<string>("all");
   const [tenantSearchText, setTenantSearchText] = useState("");
   const [tenantOpen, setTenantOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("Active");
+  const [startFrom, setStartFrom] = useState("");
+  const [startTo, setStartTo] = useState("");
+  const [endFrom, setEndFrom] = useState("");
+  const [endTo, setEndTo] = useState("");
 
   const tenantMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -153,6 +159,14 @@ function ContractsPage() {
     </button>
   );
 
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>(["Active", "Draft", "Ended", "Broken", "Cancelled"]);
+    data.contracts.forEach((c) => {
+      if (c.status?.trim()) set.add(c.status.trim());
+    });
+    return [...set].sort();
+  }, [data.contracts]);
+
   const rows = useMemo(() => {
     const q = unitSearch.trim().toLowerCase();
 
@@ -164,6 +178,16 @@ function ContractsPage() {
 
     if (q) list = list.filter((c) => c.unitLabel.toLowerCase().includes(q));
     if (tenantFilter !== "all") list = list.filter((c) => c.tenantId === tenantFilter);
+    if (typeFilter !== "all") {
+      list = list.filter((c) => (c.bedroomType || "").trim() === typeFilter);
+    }
+    if (statusFilter !== "all") {
+      list = list.filter((c) => (c.status || "Active") === statusFilter);
+    }
+    if (startFrom) list = list.filter((c) => (c.startDate || "") >= startFrom);
+    if (startTo) list = list.filter((c) => (c.startDate || "") <= startTo);
+    if (endFrom) list = list.filter((c) => (c.endDate || "") >= endFrom);
+    if (endTo) list = list.filter((c) => (c.endDate || "") <= endTo);
 
     return [...list].sort((a, b) => {
       let cmp = 0;
@@ -171,14 +195,34 @@ function ContractsPage() {
         cmp = (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
       } else if (sortKey === "unit") {
         cmp = (a.unitLabel || "").localeCompare(b.unitLabel || "", undefined, { numeric: true });
-      } else if (sortKey === "period") {
+      } else if (sortKey === "start") {
         cmp = (a.startDate || "").localeCompare(b.startDate || "");
+      } else if (sortKey === "end") {
+        cmp = (a.endDate || "").localeCompare(b.endDate || "");
+      } else if (sortKey === "type") {
+        cmp = (a.bedroomType || "").localeCompare(b.bedroomType || "");
+      } else if (sortKey === "status") {
+        cmp = (a.status || "").localeCompare(b.status || "");
       } else if (sortKey === "rent") {
         cmp = (a.rent || 0) - (b.rent || 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data.contracts, unitFlat, tenantMap, sortKey, sortDir, unitSearch, tenantFilter]);
+  }, [
+    data.contracts,
+    unitFlat,
+    tenantMap,
+    sortKey,
+    sortDir,
+    unitSearch,
+    tenantFilter,
+    typeFilter,
+    statusFilter,
+    startFrom,
+    startTo,
+    endFrom,
+    endTo,
+  ]);
 
   const historyRows = useMemo(() => {
     if (!historyTenantId) return [];
@@ -283,7 +327,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${rows.length} contract(s) · `}
+        description={`${rows.length} shown · Status default: Active`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -293,9 +337,9 @@ function ContractsPage() {
       />
 
       <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-end gap-4 p-4">
-          <div className="w-full max-w-[200px]">
-            <Label className="mb-1.5 block">Search Unit No</Label>
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div className="w-full max-w-[160px]">
+            <Label className="mb-1.5 block">Unit No</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -307,8 +351,8 @@ function ContractsPage() {
             </div>
           </div>
 
-          <div className="relative w-full max-w-[260px]">
-            <Label className="mb-1.5 block">Search Tenant</Label>
+          <div className="relative w-full max-w-[220px]">
+            <Label className="mb-1.5 block">Tenant</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -336,18 +380,18 @@ function ContractsPage() {
                 >
                   All tenants
                 </button>
-                {filteredTenants.map((t) => (
+                {filteredTenants.map((tn) => (
                   <button
-                    key={t.id}
+                    key={tn.id}
                     type="button"
                     className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
                     onClick={() => {
-                      setTenantFilter(t.id);
-                      setTenantSearchText(t.name);
+                      setTenantFilter(tn.id);
+                      setTenantSearchText(tn.name);
                       setTenantOpen(false);
                     }}
                   >
-                    {t.name}
+                    {tn.name}
                   </button>
                 ))}
                 {filteredTenants.length === 0 && (
@@ -357,19 +401,74 @@ function ContractsPage() {
             )}
           </div>
 
-          {(unitSearch || tenantFilter !== "all" || tenantSearchText) && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setUnitSearch("");
-                setTenantFilter("all");
-                setTenantSearchText("");
-                setTenantOpen(false);
-              }}
-            >
-              Clear filters
-            </Button>
-          )}
+          <div className="w-full max-w-[140px]">
+            <Label className="mb-1.5 block">Type</Label>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {bedroomOptions.map((bt) => (
+                  <SelectItem key={bt} value={bt}>
+                    {bt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-full max-w-[150px]">
+            <Label className="mb-1.5 block">Status</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {statusOptions.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-full max-w-[150px]">
+            <Label className="mb-1.5 block">Start from</Label>
+            <Input type="date" value={startFrom} onChange={(e) => setStartFrom(e.target.value)} />
+          </div>
+          <div className="w-full max-w-[150px]">
+            <Label className="mb-1.5 block">Start to</Label>
+            <Input type="date" value={startTo} onChange={(e) => setStartTo(e.target.value)} />
+          </div>
+          <div className="w-full max-w-[150px]">
+            <Label className="mb-1.5 block">End from</Label>
+            <Input type="date" value={endFrom} onChange={(e) => setEndFrom(e.target.value)} />
+          </div>
+          <div className="w-full max-w-[150px]">
+            <Label className="mb-1.5 block">End to</Label>
+            <Input type="date" value={endTo} onChange={(e) => setEndTo(e.target.value)} />
+          </div>
+
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setUnitSearch("");
+              setTenantFilter("all");
+              setTenantSearchText("");
+              setTenantOpen(false);
+              setTypeFilter("all");
+              setStatusFilter("Active");
+              setStartFrom("");
+              setStartTo("");
+              setEndFrom("");
+              setEndTo("");
+            }}
+          >
+            Reset filters
+          </Button>
         </CardContent>
       </Card>
 
@@ -385,10 +484,17 @@ function ContractsPage() {
                 <TableHead>
                   <SortBtn k="unit" label="Unit" />
                 </TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>
-                  <SortBtn k="period" label="Period" />
+                  <SortBtn k="type" label="Type" />
+                </TableHead>
+                <TableHead>
+                  <SortBtn k="status" label="Status" />
+                </TableHead>
+                <TableHead>
+                  <SortBtn k="start" label="Start" />
+                </TableHead>
+                <TableHead>
+                  <SortBtn k="end" label="End" />
                 </TableHead>
                 <TableHead>
                   <SortBtn k="rent" label="Rent" />
@@ -398,7 +504,7 @@ function ContractsPage() {
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     No contracts found.
                   </TableCell>
                 </TableRow>
@@ -430,9 +536,8 @@ function ContractsPage() {
                       {c.status || "Active"}
                     </span>
                   </TableCell>
-                  <TableCell>
-                    {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
-                  </TableCell>
+                  <TableCell>{fmtDate(c.startDate)}</TableCell>
+                  <TableCell>{fmtDate(c.endDate)}</TableCell>
                   <TableCell>{currency(c.rent)}</TableCell>
                 </TableRow>
               ))}
