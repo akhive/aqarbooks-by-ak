@@ -134,8 +134,7 @@ function ChequesPage() {
   return (
     <AppShell>
       <PageHeader
-        title="Cheques"
-        description={}
+        title="Cheques (PDC)"
       />
 
       <Card className="mb-4">
