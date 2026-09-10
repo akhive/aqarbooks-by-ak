@@ -366,7 +366,6 @@ function ReconciliationPage() {
               Cheques in period · {periodRows.length} total · showing {rows.length}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Set period above (defaults to this month). Table scrolls inside the box — balances stay on screen.
             </p>
           </div>
           <div className="no-print flex flex-wrap gap-2">
