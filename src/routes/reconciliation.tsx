@@ -209,7 +209,6 @@ function ReconciliationPage() {
       <div className="no-print">
         <PageHeader
           title="Bank Reconciliation"
-          description="Type all clearance dates, then click Save — status becomes Cleared only on Save"
           action={
             <div className="flex gap-2">
               <Button onClick={saveStatement} disabled={saving}>
@@ -299,7 +298,6 @@ function ReconciliationPage() {
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="text-base">
-            Cheques — type clearance dates, then Save statement
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
