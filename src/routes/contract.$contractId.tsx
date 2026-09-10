@@ -351,14 +351,33 @@ function ContractDetailPage() {
   const updateSplitRow = (index: number, patch: Partial<SplitRow>) => {
     setSplitRows((rows) => {
       const next = rows.map((r, i) => (i === index ? { ...r, ...patch } : r));
-      // First cheque no drives sequential numbers for the rest
+      // Auto-fill only empty following cheque nos — never overwrite user edits
       if (index === 0 && patch.chequeNo !== undefined) {
-        const first = patch.chequeNo;
-        for (let i = 1; i < next.length; i++) {
-          next[i] = { ...next[i], chequeNo: nextChequeNo(first, i) };
+        const first = (patch.chequeNo || "").trim();
+        if (first) {
+          for (let i = 1; i < next.length; i++) {
+            if (!(next[i].chequeNo || "").trim()) {
+              next[i] = { ...next[i], chequeNo: nextChequeNo(first, i) };
+            }
+          }
         }
       }
       return next;
+    });
+  };
+
+  /** One-shot: fill all sequential nos from first (used by Generate sequence button). */
+  const autoFillChequeNos = () => {
+    setSplitRows((rows) => {
+      const first = (rows[0]?.chequeNo || "").trim();
+      if (!first) {
+        toast.error("Enter the first cheque number");
+        return rows;
+      }
+      return rows.map((r, i) => ({
+        ...r,
+        chequeNo: nextChequeNo(first, i),
+      }));
     });
   };
 
@@ -384,8 +403,10 @@ function ContractDetailPage() {
     }
     const sum = Math.round(splitRows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
     if (Math.abs(sum - baseAmount) > 0.05) {
-      toast.error(
-        `Amounts total ${currency(sum)} but ${splitKind} is ${currency(baseAmount)}. Adjust rows.`,
+      window.alert(
+        `Cannot save.\n\nCheque amounts total ${currency(sum)}\n` +
+          `${splitKind === "deposit" ? "Deposit" : "Rent"} amount is ${currency(baseAmount)}\n\n` +
+          `They must be equal. Adjust the amounts and try again.`,
       );
       return;
     }
@@ -1051,10 +1072,15 @@ function ContractDetailPage() {
                   />
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">
-                Enter first cheque number — the rest fill as 000022, 000023… You can edit any
-                row. Total must match {currency(baseAmount)}.
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={autoFillChequeNos}>
+                  Auto-fill cheque nos from first
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Empty rows fill as 000022, 000023… Editing the first later does not change the
+                  others. Amounts must equal {currency(baseAmount)} to save.
+                </p>
+              </div>
               <p className="text-sm font-medium">
                 Total:{" "}
                 {currency(
