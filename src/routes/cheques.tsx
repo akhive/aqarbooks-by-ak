@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -204,10 +204,14 @@ function ChequesPage() {
                     <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
                     <TableCell>{flatNoFor(c)}</TableCell>
                     <TableCell>
-                      {linked ? (
-                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">
+                      {linked && c.contractId ? (
+                        <Link
+                          to="/contract/$contractId"
+                          params={{ contractId: c.contractId }}
+                          className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 underline-offset-2 hover:underline"
+                        >
                           {leaseNoFor(c)}
-                        </span>
+                        </Link>
                       ) : (
                         "—"
                       )}
