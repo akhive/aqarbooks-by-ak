@@ -186,6 +186,7 @@ function ContractDetailPage() {
   const [splitCount, setSplitCount] = useState(4);
   const [splitRows, setSplitRows] = useState<SplitRow[]>([]);
   const [splitAmountError, setSplitAmountError] = useState<string | null>(null);
+  const [splitDupWarn, setSplitDupWarn] = useState(false);
 
   const [editCheque, setEditCheque] = useState<Cheque | null>(null);
   const [chequeDate, setChequeDate] = useState("");
@@ -341,6 +342,7 @@ function ContractDetailPage() {
     setSplitKind(kind);
     setSplitCount(count);
     setSplitRows(buildSplitRows(kind, count));
+    setSplitDupWarn(false);
     setSplitOpen(true);
   };
 
@@ -382,13 +384,26 @@ function ContractDetailPage() {
     });
   };
 
-  const generateSplit = async () => {
+  const existingSplitCount = () => {
+    return data.cheques.filter(
+      (c) =>
+        c.contractId === contract.id &&
+        (splitKind === "deposit" ? c.kind === "deposit" : (c.kind || "rent") !== "deposit"),
+    ).length;
+  };
+
+  const generateSplit = async (opts?: { force?: boolean }) => {
     if (baseAmount <= 0) {
       toast.error(splitKind === "deposit" ? "Set deposit amount first" : "Rent is zero");
       return;
     }
     if (splitRows.length === 0) {
       toast.error("No cheque rows");
+      return;
+    }
+    const existing = existingSplitCount();
+    if (existing > 0 && !opts?.force) {
+      setSplitDupWarn(true);
       return;
     }
     for (let i = 0; i < splitRows.length; i++) {
@@ -427,6 +442,7 @@ function ContractDetailPage() {
         });
       }
       toast.success(`${splitRows.length} ${splitKind} cheque(s) created`);
+      setSplitDupWarn(false);
       setSplitOpen(false);
       await refresh();
     } catch (e: any) {
@@ -1009,6 +1025,41 @@ function ContractDetailPage() {
       </div>
 
       
+      
+      {/* Split — already has PDCs */}
+      <Dialog open={splitDupWarn} onOpenChange={setSplitDupWarn}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>PDCs already exist</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This lease already has{" "}
+            <strong>
+              {existingSplitCount()} {splitKind === "deposit" ? "deposit" : "rent"} cheque(s)
+            </strong>
+            . Creating again will add duplicates (same as clicking Split twice).
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Recommended: close this, delete the extra rows in the table, then split only if
+            needed. Or add more only if you really intend to.
+          </p>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => setSplitDupWarn(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setSplitDupWarn(false);
+                void generateSplit({ force: true });
+              }}
+            >
+              Add anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Split amount mismatch — in-app */}
       <Dialog open={!!splitAmountError} onOpenChange={(o) => !o && setSplitAmountError(null)}>
         <DialogContent className="no-print max-w-md">
@@ -1091,6 +1142,10 @@ function ContractDetailPage() {
                 <Button type="button" variant="outline" size="sm" onClick={autoFillChequeNos}>
                   Auto-fill cheque nos from first
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  Empty rows fill as 000022, 000023… Editing the first later does not change the
+                  others. Amounts must equal {currency(baseAmount)} to save.
+                </p>
               </div>
               <p className="text-sm font-medium">
                 Total:{" "}
