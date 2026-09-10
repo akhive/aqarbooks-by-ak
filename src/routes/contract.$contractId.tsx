@@ -185,6 +185,7 @@ function ContractDetailPage() {
   const [splitKind, setSplitKind] = useState<"rent" | "deposit">("rent");
   const [splitCount, setSplitCount] = useState(4);
   const [splitRows, setSplitRows] = useState<SplitRow[]>([]);
+  const [splitAmountError, setSplitAmountError] = useState<string | null>(null);
 
   const [editCheque, setEditCheque] = useState<Cheque | null>(null);
   const [chequeDate, setChequeDate] = useState("");
@@ -403,10 +404,10 @@ function ContractDetailPage() {
     }
     const sum = Math.round(splitRows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
     if (Math.abs(sum - baseAmount) > 0.05) {
-      window.alert(
-        `Cannot save.\n\nCheque amounts total ${currency(sum)}\n` +
-          `${splitKind === "deposit" ? "Deposit" : "Rent"} amount is ${currency(baseAmount)}\n\n` +
-          `They must be equal. Adjust the amounts and try again.`,
+      setSplitAmountError(
+        `Cheque amounts total ${currency(sum)}. ` +
+          `${splitKind === "deposit" ? "Deposit" : "Rent"} is ${currency(baseAmount)}. ` +
+          `They must be equal before saving.`,
       );
       return;
     }
@@ -1006,6 +1007,20 @@ function ContractDetailPage() {
         </div>
         <ChequeTable rows={depositCheques} title="" />
       </div>
+
+      
+      {/* Split amount mismatch — in-app */}
+      <Dialog open={!!splitAmountError} onOpenChange={(o) => !o && setSplitAmountError(null)}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cannot save cheques</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{splitAmountError}</p>
+          <DialogFooter>
+            <Button onClick={() => setSplitAmountError(null)}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Split */}
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
