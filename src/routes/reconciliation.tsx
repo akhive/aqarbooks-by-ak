@@ -76,13 +76,24 @@ function ReconciliationPage() {
   /** Draft only — not saved until Save is clicked */
   const [draftClearance, setDraftClearance] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "pdc" | "cleared">("all");
 
   useEffect(() => {
     const s = loadSaved();
     setOpeningBalance(s.openingBalance);
     setStatementBalance(s.statementBalance);
-    setPeriodFrom(s.periodFrom);
-    setPeriodTo(s.periodTo);
+    // Default to current month if no saved period (avoids loading 300+ rows)
+    if (s.periodFrom || s.periodTo) {
+      setPeriodFrom(s.periodFrom);
+      setPeriodTo(s.periodTo);
+    } else {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const last = new Date(y, now.getMonth() + 1, 0).getDate();
+      setPeriodFrom(`${y}-${m}-01`);
+      setPeriodTo(`${y}-${m}-${String(last).padStart(2, "0")}`);
+    }
   }, []);
 
   // Load existing clearance into draft (display only)
@@ -96,7 +107,7 @@ function ReconciliationPage() {
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
 
-  const rows = useMemo(() => {
+  const periodRows = useMemo(() => {
     return [...data.cheques]
       .filter((c) => {
         if (periodFrom && c.chequeDate && c.chequeDate < periodFrom) return false;
@@ -106,8 +117,22 @@ function ReconciliationPage() {
       .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
   }, [data.cheques, periodFrom, periodTo]);
 
-  const clearedRows = rows.filter((c) => c.status === "Cleared" || c.status === "Deposited");
-  const unclearedRows = rows.filter((c) => c.status !== "Cleared" && c.status !== "Deposited");
+  const rows = useMemo(() => {
+    if (statusFilter === "pdc") {
+      return periodRows.filter((c) => c.status !== "Cleared" && c.status !== "Deposited");
+    }
+    if (statusFilter === "cleared") {
+      return periodRows.filter((c) => c.status === "Cleared" || c.status === "Deposited");
+    }
+    return periodRows;
+  }, [periodRows, statusFilter]);
+
+  const clearedRows = periodRows.filter(
+    (c) => c.status === "Cleared" || c.status === "Deposited",
+  );
+  const unclearedRows = periodRows.filter(
+    (c) => c.status !== "Cleared" && c.status !== "Deposited",
+  );
 
   const clearedTotal = clearedRows.reduce((s, c) => s + c.amount, 0);
   const unclearedTotal = unclearedRows.reduce((s, c) => s + c.amount, 0);
@@ -139,7 +164,7 @@ function ReconciliationPage() {
       let updated = 0;
       let errors = 0;
 
-      for (const c of rows) {
+      for (const c of periodRows) {
         const typed = draftClearance[c.id] ?? "";
         const parsed = parseClearanceDate(typed);
 
@@ -297,74 +322,6 @@ function ReconciliationPage() {
 
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="text-base">
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cheque date</TableHead>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Cheque no.</TableHead>
-                <TableHead>Bank</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Clearance date</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    No cheques in this period.
-                  </TableCell>
-                </TableRow>
-              )}
-              {rows.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>{fmtDate(c.chequeDate)}</TableCell>
-                  <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
-                  <TableCell>{c.chequeNo || "—"}</TableCell>
-                  <TableCell>{c.bank || "—"}</TableCell>
-                  <TableCell className="text-right">{currency(c.amount)}</TableCell>
-                  <TableCell>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="dd/mm/yyyy"
-                      className="no-print w-[120px]"
-                      value={draftClearance[c.id] ?? ""}
-                      onChange={(e) =>
-                        setDraftClearance((d) => ({ ...d, [c.id]: e.target.value }))
-                      }
-                    />
-                    <span className="hidden print:inline">
-                      {c.clearedDate ? displayClearance(c.clearedDate) : "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        c.status === "Cleared"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : c.status === "Bounced"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-slate-100 text-slate-700"
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle className="text-base">Calculation details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
@@ -399,7 +356,111 @@ function ReconciliationPage() {
             </span>
           </div>
         </CardContent>
+      
       </Card>
+
+      <Card className="mb-4">
+        <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-base">
+              Cheques in period · {periodRows.length} total · showing {rows.length}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Set period above (defaults to this month). Table scrolls inside the box — balances stay on screen.
+            </p>
+          </div>
+          <div className="no-print flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={statusFilter === "all" ? "default" : "outline"}
+              onClick={() => setStatusFilter("all")}
+            >
+              All ({periodRows.length})
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={statusFilter === "pdc" ? "default" : "outline"}
+              onClick={() => setStatusFilter("pdc")}
+            >
+              Still PDC ({unclearedRows.length})
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={statusFilter === "cleared" ? "default" : "outline"}
+              onClick={() => setStatusFilter("cleared")}
+            >
+              Cleared ({clearedRows.length})
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="max-h-[min(55vh,520px)] overflow-auto border-t">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow>
+                  <TableHead>Cheque date</TableHead>
+                  <TableHead>Tenant</TableHead>
+                  <TableHead>Cheque no.</TableHead>
+                  <TableHead>Bank</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Clearance date</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                      No cheques in this period / filter.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {rows.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>{fmtDate(c.chequeDate)}</TableCell>
+                    <TableCell className="font-medium">{tenantName(c.tenantId)}</TableCell>
+                    <TableCell>{c.chequeNo || "—"}</TableCell>
+                    <TableCell>{c.bank || "—"}</TableCell>
+                    <TableCell className="text-right">{currency(c.amount)}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="dd/mm/yyyy"
+                        className="no-print w-[120px]"
+                        value={draftClearance[c.id] ?? ""}
+                        onChange={(e) =>
+                          setDraftClearance((d) => ({ ...d, [c.id]: e.target.value }))
+                        }
+                      />
+                      <span className="hidden print:inline">
+                        {c.clearedDate ? displayClearance(c.clearedDate) : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          c.status === "Cleared"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : c.status === "Bounced"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {c.status}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
 
       <style>{`
         @media print {
