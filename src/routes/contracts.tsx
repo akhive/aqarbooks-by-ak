@@ -283,7 +283,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${rows.length} contract(s)}
+        description={`${rows.length} contract(s).}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
