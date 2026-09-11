@@ -153,6 +153,21 @@ function ContractDetailPage() {
   const tenantName = (id: string) =>
     data.tenants.find((t) => t.id === id)?.name ?? "—";
 
+  /** Lease created by renewing this one (notes: "Renewed from {leaseNo}"). */
+  const renewedTo = useMemo(() => {
+    if (!contract) return null;
+    const fromTag = `Renewed from ${contract.leaseNo || ""}`;
+    const matches = data.contracts
+      .filter(
+        (c) =>
+          c.id !== contract.id &&
+          (c.notes || "").includes(fromTag) &&
+          c.tenantId === contract.tenantId,
+      )
+      .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+    return matches[0] || null;
+  }, [data.contracts, contract]);
+
   const isDraft = contract?.status === "Draft";
   const isActive = (contract?.status || "Active") === "Active";
   const isClosed =
@@ -899,6 +914,24 @@ function ContractDetailPage() {
         {isDraft && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <strong>Draft</strong> — add / edit PDCs, then <strong>Submit contract</strong>.
+          </div>
+        )}
+
+        {renewedTo && (
+          <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <span className="font-medium">Renewed lease: </span>
+            <Link
+              to="/contract/$contractId"
+              params={{ contractId: renewedTo.id }}
+              className="font-semibold text-sky-800 underline-offset-2 hover:underline"
+            >
+              {renewedTo.leaseNo || "View lease"}
+            </Link>
+            <span className="text-sky-700">
+              {" "}
+              · {renewedTo.status || "—"} · {fmtDate(renewedTo.startDate)} →{" "}
+              {fmtDate(renewedTo.endDate)}
+            </span>
           </div>
         )}
 
