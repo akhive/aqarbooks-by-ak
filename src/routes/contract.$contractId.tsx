@@ -107,6 +107,19 @@ function nextChequeNo(first: string, offset: number): string {
 type SplitRow = { date: string; chequeNo: string; amount: number };
 
 
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function displayContractStatus(c: { status?: string; endDate?: string }) {
+  const st = (c.status || "Active").trim();
+  if (["Renewed", "Broken", "Cancelled", "Ended", "Draft"].includes(st)) return st;
+  const today = localToday();
+  if ((st === "Active" || !c.status) && c.endDate && c.endDate < today) return "Expired";
+  return st || "Active";
+}
+
 function ContractDetailPage() {
   const { contractId } = Route.useParams();
   const navigate = useNavigate();
@@ -146,6 +159,7 @@ function ContractDetailPage() {
     contract?.status === "Broken" ||
     contract?.status === "Cancelled" ||
     contract?.status === "Ended";
+  const uiStatus = contract ? displayContractStatus(contract) : "—";
 
   const rentCheques = useMemo(() => {
     if (!contract) return [];
@@ -590,7 +604,13 @@ function ContractDetailPage() {
         extraCharges: 0,
         actualRent: 0,
       });
-      toast.success(`Draft lease ${renewLeaseNo} created — add PDCs then Submit`);
+      // Previous lease becomes Renewed
+      await updateContract(contract.id, {
+        ...contract,
+        status: "Renewed",
+        notes: [contract.notes, `Renewed → lease ${renewLeaseNo}`].filter(Boolean).join(" | "),
+      });
+      toast.success(`Draft lease ${renewLeaseNo} created — previous lease marked Renewed`);
       setRenewOpen(false);
       navigate({ to: "/contracts" });
     } catch (e: any) {
@@ -633,13 +653,17 @@ function ContractDetailPage() {
   };
 
   const statusColor =
-    contract.status === "Draft"
+    uiStatus === "Draft"
       ? "bg-amber-100 text-amber-900"
-      : contract.status === "Active"
+      : uiStatus === "Active"
         ? "bg-emerald-100 text-emerald-800"
-        : contract.status === "Ended"
-          ? "bg-slate-100 text-slate-800"
-          : "bg-red-100 text-red-800";
+        : uiStatus === "Expired"
+          ? "bg-amber-100 text-amber-900"
+          : uiStatus === "Renewed"
+            ? "bg-sky-100 text-sky-800"
+            : uiStatus === "Ended"
+              ? "bg-slate-100 text-slate-800"
+              : "bg-red-100 text-red-800";
 
   const ChequeTable = ({ rows, title }: { rows: Cheque[]; title: string }) => (
     <Card className="no-print mb-4">
@@ -885,7 +909,7 @@ function ContractDetailPage() {
               <span
                 className={`mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusColor}`}
               >
-                {contract.status || "Active"}
+                {uiStatus}
               </span>
             </CardContent>
           </Card>
@@ -1142,7 +1166,9 @@ function ContractDetailPage() {
                 <Button type="button" variant="outline" size="sm" onClick={autoFillChequeNos}>
                   Auto-fill cheque nos from first
                 </Button>
-                <p>
+                <p className="text-xs text-muted-foreground">
+                  Empty rows fill as 000022, 000023… Editing the first later does not change the
+                  others. Amounts must equal {currency(baseAmount)} to save.
                 </p>
               </div>
               <p className="text-sm font-medium">
