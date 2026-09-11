@@ -59,6 +59,36 @@ function dayDiff(start: string, end: string) {
   return Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
 }
 
+function localToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** UI status: Active past end date → Expired (DB may still be Active). */
+function displayStatus(c: { status?: string; endDate?: string }, today: string) {
+  const st = (c.status || "Active").trim();
+  if (st === "Renewed" || st === "Broken" || st === "Cancelled" || st === "Ended" || st === "Draft") {
+    return st;
+  }
+  if ((st === "Active" || !c.status) && c.endDate && c.endDate < today) {
+    return "Expired";
+  }
+  return st || "Active";
+}
+
+function statusBadgeClass(st: string) {
+  if (st === "Active") return "bg-emerald-100 text-emerald-800";
+  if (st === "Expired") return "bg-amber-100 text-amber-900";
+  if (st === "Renewed") return "bg-sky-100 text-sky-800";
+  if (st === "Draft") return "bg-amber-50 text-amber-800";
+  if (st === "Ended") return "bg-slate-100 text-slate-700";
+  return "bg-red-100 text-red-800";
+}
+
+
 function ContractsPage() {
   const { data, addContract, updateContract, deleteContract } = useStore();
   const [open, setOpen] = useState(false);
@@ -159,12 +189,22 @@ function ContractsPage() {
     </button>
   );
 
+  const today = localToday();
+
   const statusOptions = useMemo(() => {
-    const set = new Set<string>(["Active", "Draft", "Ended", "Broken", "Cancelled"]);
+    const set = new Set<string>([
+      "Active",
+      "Expired",
+      "Renewed",
+      "Draft",
+      "Ended",
+      "Broken",
+      "Cancelled",
+    ]);
     data.contracts.forEach((c) => {
       if (c.status?.trim()) set.add(c.status.trim());
     });
-    return [...set].sort();
+    return [...set];
   }, [data.contracts]);
 
   const rows = useMemo(() => {
@@ -182,7 +222,7 @@ function ContractsPage() {
       list = list.filter((c) => (c.bedroomType || "").trim() === typeFilter);
     }
     if (statusFilter !== "all") {
-      list = list.filter((c) => (c.status || "Active") === statusFilter);
+      list = list.filter((c) => displayStatus(c, today) === statusFilter);
     }
     if (startFrom) list = list.filter((c) => (c.startDate || "") >= startFrom);
     if (startTo) list = list.filter((c) => (c.startDate || "") <= startTo);
@@ -222,6 +262,7 @@ function ContractsPage() {
     startTo,
     endFrom,
     endTo,
+    today,
   ]);
 
   const historyRows = useMemo(() => {
@@ -327,7 +368,7 @@ function ContractsPage() {
     <AppShell>
       <PageHeader
         title="Contracts"
-        description={`${rows.length} shown · Status default: Active`}
+        description={`${rows.length} shown · Active past end date shows as Expired`}
         action={
           <Button onClick={startAdd}>
             <Plus className="mr-2 h-4 w-4" />
@@ -525,15 +566,11 @@ function ContractsPage() {
                   <TableCell>{c.bedroomType || "—"}</TableCell>
                   <TableCell>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        c.status === "Active"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : c.status === "Ended"
-                            ? "bg-slate-100 text-slate-700"
-                            : "bg-red-100 text-red-800"
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(
+                        displayStatus(c, today),
+                      )}`}
                     >
-                      {c.status || "Active"}
+                      {displayStatus(c, today)}
                     </span>
                   </TableCell>
                   <TableCell>{fmtDate(c.startDate)}</TableCell>
