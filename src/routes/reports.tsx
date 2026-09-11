@@ -570,9 +570,6 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Income breakdown</CardTitle>
-                <CardDescription>
-                  Based on actual rent · {prevYear} · {year} · Deferred
-                </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
@@ -720,9 +717,6 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Yearly profit</CardTitle>
-                <CardDescription>
-                  Actual rent + penalty + extra charges − expenses
-                </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
@@ -1081,7 +1075,6 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Other incomes</CardTitle>
-                <CardDescription>Penalty + extra charges from break/cancel</CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
