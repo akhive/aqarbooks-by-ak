@@ -245,6 +245,9 @@ function ContractDetailPage() {
   const [renewLeaseNo, setRenewLeaseNo] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [chequeDeleteId, setChequeDeleteId] = useState<string | null>(null);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
 
   useEffect(() => {
     setBanks(loadBanks());
@@ -544,14 +547,19 @@ function ContractDetailPage() {
     }
   };
 
-  const removeCheque = async (id: string) => {
+  const removeCheque = (id: string) => {
     if (isActive) {
       toast.error("Active contract — mark as Returned instead of deleting");
       return;
     }
-    if (!confirm("Delete this cheque?")) return;
+    setChequeDeleteId(id);
+  };
+
+  const confirmRemoveCheque = async () => {
+    if (!chequeDeleteId) return;
     try {
-      await deleteCheque(id);
+      await deleteCheque(chequeDeleteId);
+      setChequeDeleteId(null);
       toast.success("Deleted");
       await refresh();
     } catch (e: any) {
@@ -635,10 +643,12 @@ function ContractDetailPage() {
     }
   };
 
-  const submitContract = async () => {
-    if (!confirm("Submit this contract? It becomes Active and will appear in reports.")) return;
+  const submitContract = () => setSubmitOpen(true);
+
+  const confirmSubmitContract = async () => {
     try {
       await updateContract(contract.id, { ...contract, status: "Active" });
+      setSubmitOpen(false);
       toast.success("Contract submitted (Active)");
       await refresh();
     } catch (e: any) {
@@ -664,6 +674,25 @@ function ContractDetailPage() {
       navigate({ to: "/contracts" });
     } catch (e: any) {
       toast.error(e.message || "Delete failed");
+    }
+  };
+
+
+  const revertFromRenewed = () => setRevertOpen(true);
+
+  const confirmRevertFromRenewed = async () => {
+    if ((contract.status || "") !== "Renewed") return;
+    try {
+      await updateContract(contract.id, {
+        ...contract,
+        status: "Active",
+        notes: [contract.notes, "Status reverted from Renewed → Active"].filter(Boolean).join(" | "),
+      });
+      setRevertOpen(false);
+      toast.success("Status set back to Active");
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message || "Failed");
     }
   };
 
@@ -932,6 +961,18 @@ function ContractDetailPage() {
               · {renewedTo.status || "—"} · {fmtDate(renewedTo.startDate)} →{" "}
               {fmtDate(renewedTo.endDate)}
             </span>
+          </div>
+        )}
+
+        {(contract.status || "") === "Renewed" && !renewedTo && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <div>
+              <strong>Status is Renewed</strong> but the new lease was not found (deleted draft?).
+              You can set this lease back to Active.
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={revertFromRenewed}>
+              Revert to Active
+            </Button>
           </div>
         )}
 
@@ -1605,6 +1646,62 @@ function ContractDetailPage() {
       </Dialog>
 
       
+
+
+      {/* Delete cheque — in-app */}
+      <Dialog open={!!chequeDeleteId} onOpenChange={(o) => !o && setChequeDeleteId(null)}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this cheque?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">This cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChequeDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmRemoveCheque}>
+              Yes, delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Submit draft — in-app */}
+      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Submit this contract?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            It becomes <strong>Active</strong> and will appear in reports.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubmitOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmSubmitContract}>Yes, submit</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revert Renewed — in-app */}
+      <Dialog open={revertOpen} onOpenChange={setRevertOpen}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Revert to Active?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            No renewal lease found (or it was deleted). Set this lease status from{" "}
+            <strong>Renewed</strong> back to <strong>Active</strong>?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevertOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRevertFromRenewed}>Yes, revert</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
