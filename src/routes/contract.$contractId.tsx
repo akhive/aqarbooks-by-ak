@@ -209,6 +209,54 @@ function ContractDetailPage() {
   const receivedTotal = clearedRent.reduce((s, c) => s + c.amount, 0);
   const pendingReturnTotal = pendingReturnPdcs.reduce((s, c) => s + c.amount, 0);
 
+  const outstanding = useMemo(() => {
+    if (!contract) {
+      return {
+        rentDue: 0,
+        penalty: 0,
+        extra: 0,
+        depositRefund: 0,
+        collected: 0,
+        outstanding: 0,
+      };
+    }
+    const isSettled =
+      contract.status === "Broken" ||
+      contract.status === "Cancelled" ||
+      contract.status === "Ended";
+    const rentDue =
+      isSettled && contract.actualRent && contract.actualRent > 0
+        ? contract.actualRent
+        : contract.rent || 0;
+    const penalty = contract.penalty || 0;
+    const extra = contract.extraCharges || 0;
+    // Deposit refund only after settlement notes/fields; use depositAmount as held credit when closed
+    const depositCredit = isSettled ? contract.depositAmount || 0 : 0;
+
+    const collected = data.cheques
+      .filter((c) => {
+        if (c.contractId !== contract.id && !( !c.contractId && c.tenantId === contract.tenantId))
+          return false;
+        if (c.status !== "Cleared" && c.status !== "Deposited") return false;
+        const k = c.kind || "rent";
+        // deposit cheques are the deposit paid in, not settlement collection toward rent balance
+        if (k === "deposit") return false;
+        return true;
+      })
+      .reduce((s, c) => s + (c.amount || 0), 0);
+
+    // Due: rent + penalty + other − deposit refund − collected
+    const due = rentDue + penalty + extra - depositCredit - collected;
+    return {
+      rentDue,
+      penalty,
+      extra,
+      depositRefund: depositCredit,
+      collected,
+      outstanding: due,
+    };
+  }, [contract, data.cheques]);
+
   const [banks, setBanks] = useState<string[]>([]);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitKind, setSplitKind] = useState<"rent" | "deposit">("rent");
@@ -248,6 +296,12 @@ function ContractDetailPage() {
   const [chequeDeleteId, setChequeDeleteId] = useState<string | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
+  const [addChequeOpen, setAddChequeOpen] = useState(false);
+  const [addChDate, setAddChDate] = useState("");
+  const [addChNo, setAddChNo] = useState("");
+  const [addChBank, setAddChBank] = useState("");
+  const [addChAmount, setAddChAmount] = useState(0);
+  const [addChKind, setAddChKind] = useState<string>("settlement");
 
   useEffect(() => {
     setBanks(loadBanks());
@@ -488,6 +542,48 @@ function ContractDetailPage() {
     }
   };
 
+
+  const openAddCheque = (prefill?: { amount?: number; kind?: string }) => {
+    setAddChDate(new Date().toISOString().slice(0, 10));
+    setAddChNo("");
+    setAddChBank("");
+    setAddChAmount(prefill?.amount || 0);
+    setAddChKind(prefill?.kind || "settlement");
+    setAddChequeOpen(true);
+  };
+
+  const saveAddCheque = async () => {
+    if (!addChDate) {
+      toast.error("Date required");
+      return;
+    }
+    if (!addChAmount || addChAmount <= 0) {
+      toast.error("Amount required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await addCheque({
+        tenantId: contract.tenantId,
+        contractId: contract.id,
+        chequeDate: addChDate,
+        chequeNo: addChNo || "",
+        bank: addChBank || "",
+        amount: addChAmount,
+        status: "PDC",
+        reconciled: false,
+        kind: addChKind as any,
+      });
+      toast.success("Cheque added");
+      setAddChequeOpen(false);
+      await refresh();
+    } catch (e: any) {
+      toast.error(e.message || "Failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openBreak = (type: ContractStatus) => {
     setActionType(type);
     setBreakDate(new Date().toISOString().slice(0, 10));
@@ -522,6 +618,15 @@ function ContractDetailPage() {
       setActionOpen(false);
       await refresh();
       setViewSettlementOpen(true);
+      if (balance > 0) {
+        // Receivable left — prefill add-cheque for settlement collection later
+        setAddChDate(breakDate || new Date().toISOString().slice(0, 10));
+        setAddChAmount(balance);
+        setAddChKind("settlement");
+        setAddChNo("");
+        setAddChBank("");
+        // user can open Add cheque from outstanding box
+      }
     } catch (e: any) {
       toast.error(e.message || "Failed");
     } finally {
@@ -728,6 +833,7 @@ function ContractDetailPage() {
               <TableHead>Cheque No</TableHead>
               <TableHead>Bank</TableHead>
               <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Kind</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Cleared</TableHead>
               <TableHead className="w-20" />
@@ -736,8 +842,8 @@ function ContractDetailPage() {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                  No cheques yet. Use Split on this lease card.
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  No cheques yet. Use Split or Add cheque on this lease card.
                 </TableCell>
               </TableRow>
             ) : (
@@ -747,6 +853,7 @@ function ContractDetailPage() {
                   <TableCell>{c.chequeNo || "—"}</TableCell>
                   <TableCell>{c.bank || "—"}</TableCell>
                   <TableCell className="text-right">{currency(c.amount)}</TableCell>
+                  <TableCell className="text-xs capitalize">{c.kind || "rent"}</TableCell>
                   <TableCell>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -1107,6 +1214,56 @@ function ContractDetailPage() {
           </Card>
         </div>
 
+        {/* Outstanding */}
+        <Card className="no-print mb-4 border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base text-amber-950">Outstanding</CardTitle>
+            <Button type="button" size="sm" variant="outline" onClick={() => openAddCheque({
+              amount: outstanding.outstanding > 0 ? outstanding.outstanding : 0,
+              kind: "settlement",
+            })}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add cheque
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Rent due (actual / contract)</span>
+              <span>{currency(outstanding.rentDue)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Penalty</span>
+              <span>{currency(outstanding.penalty)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Other income</span>
+              <span>{currency(outstanding.extra)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">− Deposit refund</span>
+              <span>{currency(outstanding.depositRefund)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">− Collected (cleared cheques)</span>
+              <span>{currency(outstanding.collected)}</span>
+            </div>
+            <div className="flex justify-between border-t pt-2 text-base font-semibold">
+              <span>Outstanding</span>
+              <span className={outstanding.outstanding > 0 ? "text-amber-800" : outstanding.outstanding < 0 ? "text-sky-800" : "text-emerald-700"}>
+                {currency(outstanding.outstanding)}
+                {outstanding.outstanding > 0
+                  ? " (Receivable)"
+                  : outstanding.outstanding < 0
+                    ? " (Payable)"
+                    : " (Settled)"}
+              </span>
+            </div>
+            <p className="pt-1 text-xs text-muted-foreground">
+              Add cheque with kind Settlement / Penalty / Other income / Rent. When cleared, outstanding updates.
+            </p>
+          </CardContent>
+        </Card>
+
         <div className="no-print mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-base font-semibold">Payment schedule (Rent cheques)</h3>
           <Button variant="outline" size="sm" onClick={() => openSplit("rent")}>
@@ -1171,6 +1328,70 @@ function ContractDetailPage() {
           <p className="text-sm text-muted-foreground">{splitAmountError}</p>
           <DialogFooter>
             <Button onClick={() => setSplitAmountError(null)}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+      {/* Add single cheque */}
+      <Dialog open={addChequeOpen} onOpenChange={setAddChequeOpen}>
+        <DialogContent className="no-print max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add cheque</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Date *</Label>
+              <Input type="date" value={addChDate} onChange={(e) => setAddChDate(e.target.value)} />
+            </div>
+            <div>
+              <Label>Cheque no.</Label>
+              <Input value={addChNo} onChange={(e) => setAddChNo(e.target.value)} />
+            </div>
+            <div>
+              <Label>Bank</Label>
+              <Input
+                list="bank-list-add"
+                value={addChBank}
+                onChange={(e) => setAddChBank(e.target.value)}
+              />
+              <datalist id="bank-list-add">
+                {banks.map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <Label>Amount *</Label>
+              <Input
+                type="number"
+                value={addChAmount || ""}
+                onChange={(e) => setAddChAmount(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <Label>Kind</Label>
+              <Select value={addChKind} onValueChange={setAddChKind}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="settlement">Settlement (balance)</SelectItem>
+                  <SelectItem value="penalty">Penalty</SelectItem>
+                  <SelectItem value="other">Other income</SelectItem>
+                  <SelectItem value="rent">Rent</SelectItem>
+                  <SelectItem value="deposit">Deposit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddChequeOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveAddCheque} disabled={saving}>
+              {saving ? "Saving..." : "Save cheque"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
