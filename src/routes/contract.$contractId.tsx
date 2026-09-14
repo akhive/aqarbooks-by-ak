@@ -216,7 +216,7 @@ function ContractDetailPage() {
         penalty: 0,
         extra: 0,
         depositRefund: 0,
-        collected: 0,
+        onLease: 0,
         outstanding: 0,
       };
     }
@@ -230,32 +230,29 @@ function ContractDetailPage() {
         : contract.rent || 0;
     const penalty = contract.penalty || 0;
     const extra = contract.extraCharges || 0;
-    // Deposit refund only after settlement notes/fields; use depositAmount as held credit when closed
     const depositCredit = isSettled ? contract.depositAmount || 0 : 0;
 
-    const collected = data.cheques
+    // Outstanding = due − cheques already on this lease (any status). Clearance does not matter.
+    const onLease = data.cheques
       .filter((c) => {
-        if (c.contractId !== contract.id && !( !c.contractId && c.tenantId === contract.tenantId))
-          return false;
-        if (c.status !== "Cleared" && c.status !== "Deposited") return false;
+        if (c.contractId !== contract.id) return false;
         const k = c.kind || "rent";
-        // deposit cheques are the deposit paid in, not settlement collection toward rent balance
-        if (k === "deposit") return false;
+        if (k === "deposit") return false; // deposit tracked separately
         return true;
       })
       .reduce((s, c) => s + (c.amount || 0), 0);
 
-    // Due: rent + penalty + other − deposit refund − collected
-    const due = rentDue + penalty + extra - depositCredit - collected;
+    const due = rentDue + penalty + extra - depositCredit;
     return {
       rentDue,
       penalty,
       extra,
       depositRefund: depositCredit,
-      collected,
-      outstanding: due,
+      onLease,
+      outstanding: due - onLease,
     };
   }, [contract, data.cheques]);
+
 
   const [banks, setBanks] = useState<string[]>([]);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -297,6 +294,7 @@ function ContractDetailPage() {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [addChequeOpen, setAddChequeOpen] = useState(false);
+  const [outstandingOpen, setOutstandingOpen] = useState(false);
   const [addChDate, setAddChDate] = useState("");
   const [addChNo, setAddChNo] = useState("");
   const [addChBank, setAddChBank] = useState("");
@@ -1214,42 +1212,24 @@ function ContractDetailPage() {
           </Card>
         </div>
 
-        {/* Outstanding */}
-        <Card className="no-print mb-4 border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-base text-amber-950">Outstanding</CardTitle>
-            <Button type="button" size="sm" variant="outline" onClick={() => openAddCheque({
-              amount: outstanding.outstanding > 0 ? outstanding.outstanding : 0,
-              kind: "settlement",
-            })}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add cheque
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Rent due (actual / contract)</span>
-              <span>{currency(outstanding.rentDue)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Penalty</span>
-              <span>{currency(outstanding.penalty)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Other income</span>
-              <span>{currency(outstanding.extra)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">− Deposit refund</span>
-              <span>{currency(outstanding.depositRefund)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">− Collected (cleared cheques)</span>
-              <span>{currency(outstanding.collected)}</span>
-            </div>
-            <div className="flex justify-between border-t pt-2 text-base font-semibold">
-              <span>Outstanding</span>
-              <span className={outstanding.outstanding > 0 ? "text-amber-800" : outstanding.outstanding < 0 ? "text-sky-800" : "text-emerald-700"}>
+        {/* Outstanding — collapsed by default */}
+        <Card className="no-print mb-4 border border-amber-200 bg-amber-50/40">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+            onClick={() => setOutstandingOpen((o) => !o)}
+          >
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-sm font-semibold text-amber-950">Outstanding</span>
+              <span
+                className={`text-base font-bold ${
+                  outstanding.outstanding > 0
+                    ? "text-amber-900"
+                    : outstanding.outstanding < 0
+                      ? "text-sky-800"
+                      : "text-emerald-700"
+                }`}
+              >
                 {currency(outstanding.outstanding)}
                 {outstanding.outstanding > 0
                   ? " (Receivable)"
@@ -1258,10 +1238,57 @@ function ContractDetailPage() {
                     : " (Settled)"}
               </span>
             </div>
-            <p className="pt-1 text-xs text-muted-foreground">
-              Add cheque with kind Settlement / Penalty / Other income / Rent. When cleared, outstanding updates.
-            </p>
-          </CardContent>
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAddCheque({
+                    amount: outstanding.outstanding > 0 ? outstanding.outstanding : 0,
+                    kind: "settlement",
+                  });
+                }}
+              >
+                <Button type="button" size="sm" variant="outline">
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add cheque
+                </Button>
+              </span>
+              <span className="text-amber-900">{outstandingOpen ? "▲" : "▼"}</span>
+            </div>
+          </button>
+          {outstandingOpen && (
+            <CardContent className="space-y-1 border-t border-amber-100 pt-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rent due</span>
+                <span>{currency(outstanding.rentDue)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Penalty</span>
+                <span>{currency(outstanding.penalty)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Other income</span>
+                <span>{currency(outstanding.extra)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">− Deposit refund</span>
+                <span>{currency(outstanding.depositRefund)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">− Cheques on this lease</span>
+                <span>{currency(outstanding.onLease)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 font-semibold">
+                <span>Outstanding</span>
+                <span>{currency(outstanding.outstanding)}</span>
+              </div>
+              <p className="pt-1 text-xs text-muted-foreground">
+                Based on cheques listed on this lease (any status). Bank clearance does not change
+                outstanding.
+              </p>
+            </CardContent>
+          )}
         </Card>
 
         <div className="no-print mb-2 flex flex-wrap items-center justify-between gap-2">
