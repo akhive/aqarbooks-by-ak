@@ -253,16 +253,20 @@ function ContractDetailPage() {
     setBanks(loadBanks());
   }, []);
 
+  // Auto-suggest calculated rent only when dialog opens or break date changes
+  // (does not overwrite after user edits calcRent)
   useEffect(() => {
     if (!contract || !actionOpen) return;
     const days = dayCount(contract.startDate, breakDate);
     const used = Math.round((contract.rent / 365) * days);
-    const received = rentCheques
-      .filter((c) => c.status === "Cleared" || c.status === "Deposited")
-      .reduce((s, c) => s + c.amount, 0);
     setCalcRent(used);
-    setBalance(used + penalty + extra - received - depositRefund);
-  }, [contract, actionOpen, breakDate, penalty, extra, depositRefund, rentCheques]);
+  }, [contract, actionOpen, breakDate]);
+
+  // Balance always follows the current fields (including manual calcRent)
+  useEffect(() => {
+    if (!actionOpen) return;
+    setBalance(calcRent + penalty + extra - receivedTotal - depositRefund);
+  }, [actionOpen, calcRent, penalty, extra, depositRefund, receivedTotal]);
 
   const rentBreakdown = useMemo(() => {
     if (!contract) return { leasedDays: 0, revenue: 0, deferred: 0, rentAmt: 0 };
