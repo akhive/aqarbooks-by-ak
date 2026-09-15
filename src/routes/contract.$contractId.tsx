@@ -1310,23 +1310,27 @@ function ContractDetailPage() {
         </div>
         <ChequeTable rows={rentCheques} title="" />
 
-        <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-base font-semibold">Payment schedule (Issued cheques)</h3>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              openAddCheque({
-                amount: outstanding.outstanding < 0 ? Math.abs(outstanding.outstanding) : 0,
-                kind: "refund",
-              })
-            }
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Issue cheque
-          </Button>
-        </div>
-        <ChequeTable rows={issuedChequesList} title="" />
+        {isClosed && (
+          <>
+            <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-base font-semibold">Payment schedule (Issued cheques)</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  openAddCheque({
+                    amount: outstanding.outstanding < 0 ? Math.abs(outstanding.outstanding) : 0,
+                    kind: "refund",
+                  })
+                }
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Issue cheque
+              </Button>
+            </div>
+            <ChequeTable rows={issuedChequesList} title="" />
+          </>
+        )}
 
         <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-base font-semibold">Deposit cheques</h3>
