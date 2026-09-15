@@ -1286,7 +1286,8 @@ function ContractDetailPage() {
                 {outstanding.outstanding > 0
                   ? " (Receivable)"
                   : outstanding.outstanding < 0
-                    ? " (Payable)"}
+                    ? " (Payable)"
+                    : " (Settled)"}
               </span>
             </div>
             <Button
