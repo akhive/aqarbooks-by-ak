@@ -30,6 +30,7 @@ import {
   type ChequeStatus,
   type ContractStatus,
 } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/contract/$contractId")({
   component: ContractDetailPage,
@@ -123,6 +124,7 @@ function displayContractStatus(c: { status?: string; endDate?: string }) {
 function ContractDetailPage() {
   const { contractId } = Route.useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const {
     data,
     loading,
@@ -655,8 +657,15 @@ function ContractDetailPage() {
   };
 
   const removeCheque = (id: string) => {
-    if (isActive) {
-      toast.error("Active contract — mark as Returned instead of deleting");
+    const ch = data.cheques.find((c) => c.id === id);
+    // Superuser can delete anything
+    if (isAdmin) {
+      setChequeDeleteId(id);
+      return;
+    }
+    // Normal user: can delete PDC / Returned; not Cleared on active lease
+    if (isActive && ch && (ch.status === "Cleared" || ch.status === "Deposited")) {
+      toast.error("Cleared cheque — only superuser can delete, or mark as Returned");
       return;
     }
     setChequeDeleteId(id);
