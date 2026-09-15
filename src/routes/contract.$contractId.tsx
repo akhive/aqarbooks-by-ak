@@ -219,41 +219,66 @@ function ContractDetailPage() {
         extra: 0,
         depositRefund: 0,
         onLease: 0,
+        issuedToTenant: 0,
         outstanding: 0,
+        paymentCheques: [] as typeof data.cheques,
+        issuedCheques: [] as typeof data.cheques,
       };
     }
-    const isSettled =
-      contract.status === "Broken" ||
-      contract.status === "Cancelled" ||
-      contract.status === "Ended";
+
+    // Prefer manual actual rent from break settlement when set
     const rentDue =
-      isSettled && contract.actualRent && contract.actualRent > 0
+      contract.actualRent && contract.actualRent > 0
         ? contract.actualRent
         : contract.rent || 0;
     const penalty = contract.penalty || 0;
     const extra = contract.extraCharges || 0;
+    const isSettled =
+      contract.status === "Broken" ||
+      contract.status === "Cancelled" ||
+      contract.status === "Ended";
+    // Deposit refund credit after break (user break form / deposit on file)
     const depositCredit = isSettled ? contract.depositAmount || 0 : 0;
 
-    // Outstanding = due − cheques already on this lease (any status). Clearance does not matter.
-    const onLease = data.cheques
-      .filter((c) => {
-        if (c.contractId !== contract.id) return false;
-        const k = c.kind || "rent";
-        if (k === "deposit") return false; // deposit tracked separately
-        return true;
-      })
-      .reduce((s, c) => s + (c.amount || 0), 0);
+    const linked = data.cheques.filter((c) => c.contractId === contract.id);
 
+    // Payments held against the lease (not returned/bounced, not deposit, not refund-to-tenant)
+    const paymentCheques = linked.filter((c) => {
+      const k = (c.kind || "rent").toLowerCase();
+      if (k === "deposit" || k === "refund" || k === "payable") return false;
+      const st = (c.status || "PDC").toLowerCase();
+      if (st === "returned" || st === "bounced") return false;
+      return true;
+    });
+    const onLease = paymentCheques.reduce((s, c) => s + (c.amount || 0), 0);
+
+    // Cheques issued TO tenant (settle payable outstanding)
+    const issuedCheques = linked.filter((c) => {
+      const k = (c.kind || "").toLowerCase();
+      return k === "refund" || k === "payable";
+    });
+    const issuedToTenant = issuedCheques.reduce((s, c) => s + (c.amount || 0), 0);
+
+    // due − payments + (payable was negative so adding issued brings toward zero)
+    // net before issue = due - onLease; if -1000, + issued 1000 → 0
     const due = rentDue + penalty + extra - depositCredit;
+    const outstandingAmt = due - onLease + issuedToTenant;
+
     return {
       rentDue,
       penalty,
       extra,
       depositRefund: depositCredit,
       onLease,
-      outstanding: due - onLease,
+      issuedToTenant,
+      outstanding: outstandingAmt,
+      paymentCheques,
+      issuedCheques,
+      breakDate: contract.endedAt || "",
     };
   }, [contract, data.cheques]);
+
+
 
 
   const [banks, setBanks] = useState<string[]>([]);
@@ -296,7 +321,7 @@ function ContractDetailPage() {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [addChequeOpen, setAddChequeOpen] = useState(false);
-  const [outstandingOpen, setOutstandingOpen] = useState(false);
+  const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
   const [addChDate, setAddChDate] = useState("");
   const [addChNo, setAddChNo] = useState("");
   const [addChBank, setAddChBank] = useState("");
@@ -1221,17 +1246,13 @@ function ContractDetailPage() {
           </Card>
         </div>
 
-        {/* Outstanding — collapsed by default */}
-        <Card className="no-print mb-4 border border-amber-200 bg-amber-50/40">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-            onClick={() => setOutstandingOpen((o) => !o)}
-          >
+        {/* Outstanding summary only — details in Settlement details */}
+        <Card className="no-print mb-4 border border-amber-200 bg-amber-50/50">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-sm font-semibold text-amber-950">Outstanding</span>
               <span
-                className={`text-base font-bold ${
+                className={`text-lg font-bold ${
                   outstanding.outstanding > 0
                     ? "text-amber-900"
                     : outstanding.outstanding < 0
@@ -1239,7 +1260,7 @@ function ContractDetailPage() {
                       : "text-emerald-700"
                 }`}
               >
-                {currency(outstanding.outstanding)}
+                {currency(Math.abs(outstanding.outstanding))}
                 {outstanding.outstanding > 0
                   ? " (Receivable)"
                   : outstanding.outstanding < 0
@@ -1247,57 +1268,15 @@ function ContractDetailPage() {
                     : " (Settled)"}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span
-                className="inline-flex"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openAddCheque({
-                    amount: outstanding.outstanding > 0 ? outstanding.outstanding : 0,
-                    kind: "settlement",
-                  });
-                }}
-              >
-                <Button type="button" size="sm" variant="outline">
-                  <Plus className="mr-1 h-4 w-4" />
-                  Add cheque
-                </Button>
-              </span>
-              <span className="text-amber-900">{outstandingOpen ? "▲" : "▼"}</span>
-            </div>
-          </button>
-          {outstandingOpen && (
-            <CardContent className="space-y-1 border-t border-amber-100 pt-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Rent due</span>
-                <span>{currency(outstanding.rentDue)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Penalty</span>
-                <span>{currency(outstanding.penalty)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Other income</span>
-                <span>{currency(outstanding.extra)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">− Deposit refund</span>
-                <span>{currency(outstanding.depositRefund)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">− Cheques on this lease</span>
-                <span>{currency(outstanding.onLease)}</span>
-              </div>
-              <div className="flex justify-between border-t pt-2 font-semibold">
-                <span>Outstanding</span>
-                <span>{currency(outstanding.outstanding)}</span>
-              </div>
-              <p className="pt-1 text-xs text-muted-foreground">
-                Based on cheques listed on this lease (any status). Bank clearance does not change
-                outstanding.
-              </p>
-            </CardContent>
-          )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSettlementDetailsOpen(true)}
+            >
+              Settlement details
+            </Button>
+          </CardContent>
         </Card>
 
         <div className="no-print mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -1369,6 +1348,123 @@ function ContractDetailPage() {
       </Dialog>
 
 
+
+      {/* Settlement details */}
+      <Dialog open={settlementDetailsOpen} onOpenChange={setSettlementDetailsOpen}>
+        <DialogContent className="no-print max-h-[90vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Settlement details — Lease {contract.leaseNo || ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div className="rounded-md border bg-muted/40 p-3 space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Break / end date</span>
+                <span>{outstanding.breakDate ? fmtDate(outstanding.breakDate) : "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Actual rent (manual / break)</span>
+                <span>{currency(outstanding.rentDue)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">+ Penalty</span>
+                <span>{currency(outstanding.penalty)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">+ Other income</span>
+                <span>{currency(outstanding.extra)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">− Deposit refund</span>
+                <span>{currency(outstanding.depositRefund)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">− Cheques from tenant (on lease)</span>
+                <span>{currency(outstanding.onLease)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">+ Issued to tenant</span>
+                <span>{currency(outstanding.issuedToTenant)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 text-base font-semibold">
+                <span>Outstanding</span>
+                <span>
+                  {currency(Math.abs(outstanding.outstanding))}
+                  {outstanding.outstanding > 0
+                    ? " (Receivable)"
+                    : outstanding.outstanding < 0
+                      ? " (Payable)"
+                      : " (Settled)"}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 font-medium">Cheques from tenant (count toward due)</p>
+              {outstanding.paymentCheques.length === 0 ? (
+                <p className="text-xs text-muted-foreground">None</p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {outstanding.paymentCheques.map((c) => (
+                    <li key={c.id} className="flex justify-between gap-2 border-b border-border/50 py-1">
+                      <span>
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.kind || "rent"} ·{" "}
+                        {c.status}
+                      </span>
+                      <span>{currency(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 font-medium">Issued to tenant (refund / payable)</p>
+              {outstanding.issuedCheques.length === 0 ? (
+                <p className="text-xs text-muted-foreground">None yet</p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {outstanding.issuedCheques.map((c) => (
+                    <li key={c.id} className="flex justify-between gap-2 border-b border-border/50 py-1">
+                      <span>
+                        {fmtDate(c.chequeDate)} · {c.chequeNo || "—"} · {c.status}
+                      </span>
+                      <span>{currency(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSettlementDetailsOpen(false);
+                const amt = Math.abs(outstanding.outstanding);
+                if (outstanding.outstanding < 0) {
+                  openAddCheque({ amount: amt, kind: "refund" });
+                } else if (outstanding.outstanding > 0) {
+                  openAddCheque({ amount: amt, kind: "settlement" });
+                } else {
+                  openAddCheque({ amount: 0, kind: "settlement" });
+                }
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              {outstanding.outstanding < 0
+                ? "Issue cheque to tenant"
+                : outstanding.outstanding > 0
+                  ? "Add settlement cheque"
+                  : "Add cheque"}
+            </Button>
+            <Button type="button" onClick={() => setSettlementDetailsOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add single cheque */}
       <Dialog open={addChequeOpen} onOpenChange={setAddChequeOpen}>
         <DialogContent className="no-print max-w-md">
@@ -1412,7 +1508,8 @@ function ContractDetailPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="settlement">Settlement (balance)</SelectItem>
+                  <SelectItem value="settlement">Settlement (from tenant)</SelectItem>
+                  <SelectItem value="refund">Issued to tenant (refund/payable)</SelectItem>
                   <SelectItem value="penalty">Penalty</SelectItem>
                   <SelectItem value="other">Other income</SelectItem>
                   <SelectItem value="rent">Rent</SelectItem>
