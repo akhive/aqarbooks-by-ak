@@ -310,6 +310,7 @@ function ContractDetailPage() {
   const [chequeBank, setChequeBank] = useState("");
   const [chequeAmount, setChequeAmount] = useState(0);
   const [chequeStatus, setChequeStatus] = useState<ChequeStatus>("PDC");
+  const [chequeKind, setChequeKind] = useState<string>("rent");
 
   const [actionOpen, setActionOpen] = useState(false);
   const [actionType, setActionType] = useState<ContractStatus>("Broken");
@@ -689,6 +690,7 @@ function ContractDetailPage() {
         bank: chequeBank,
         amount: chequeAmount,
         status: chequeStatus,
+        kind: chequeKind as any,
       });
       toast.success("Cheque updated");
       setEditCheque(null);
@@ -933,6 +935,7 @@ function ContractDetailPage() {
                           setChequeBank(c.bank || "");
                           setChequeAmount(c.amount || 0);
                           setChequeStatus((c.status as ChequeStatus) || "PDC");
+                          setChequeKind((c.kind as string) || "rent");
                         }}
                       >
                         <Pencil className="h-4 w-4" />
@@ -1695,6 +1698,22 @@ function ContractDetailPage() {
                 value={chequeAmount || ""}
                 onChange={(e) => setChequeAmount(Number(e.target.value))}
               />
+            </div>
+            <div>
+              <Label>Kind</Label>
+              <Select value={chequeKind} onValueChange={setChequeKind}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rent">Rent</SelectItem>
+                  <SelectItem value="deposit">Deposit</SelectItem>
+                  <SelectItem value="settlement">Settlement (from tenant)</SelectItem>
+                  <SelectItem value="refund">Issued to tenant</SelectItem>
+                  <SelectItem value="penalty">Penalty</SelectItem>
+                  <SelectItem value="other">Other income</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Status</Label>
