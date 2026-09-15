@@ -118,10 +118,8 @@ function ChequesPage() {
   };
 
   const remove = async (c: Cheque) => {
-    if (c.contractId && !isAdmin) {
-      toast.error(
-        "Linked PDC — open the lease card, or sign in as superuser to delete here.",
-      );
+    if (!isAdmin) {
+      toast.error("Only superuser can delete cheques");
       return;
     }
     if (!confirm("Delete this cheque permanently?")) return;
@@ -242,21 +240,16 @@ function ChequesPage() {
                         <Button size="icon" variant="ghost" onClick={() => startEdit(c)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          disabled={linked && !isAdmin}
-                          title={
-                            linked && !isAdmin
-                              ? "Linked to contract — manage from lease card (or superuser)"
-                              : "Delete"
-                          }
-                          onClick={() => remove(c)}
-                        >
-                          <Trash2
-                            className={`h-4 w-4 ${linked && !isAdmin ? "opacity-30" : "text-destructive"}`}
-                          />
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Delete"
+                            onClick={() => remove(c)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
