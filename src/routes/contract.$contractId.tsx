@@ -703,15 +703,8 @@ function ContractDetailPage() {
   };
 
   const removeCheque = (id: string) => {
-    const ch = data.cheques.find((c) => c.id === id);
-    // Superuser can delete anything
-    if (isAdmin) {
-      setChequeDeleteId(id);
-      return;
-    }
-    // Normal user: can delete PDC / Returned; not Cleared on active lease
-    if (isActive && ch && (ch.status === "Cleared" || ch.status === "Deposited")) {
-      toast.error("Cleared cheque — only superuser can delete, or mark as Returned");
+    if (!isAdmin) {
+      toast.error("Only superuser can delete cheques");
       return;
     }
     setChequeDeleteId(id);
@@ -940,9 +933,11 @@ function ContractDetailPage() {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => removeCheque(c.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {isAdmin && (
+                        <Button size="icon" variant="ghost" onClick={() => removeCheque(c.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
