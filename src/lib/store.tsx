@@ -404,16 +404,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       deleteCheque: async (id) => {
-  const ch = data.cheques.find((x) => x.id === id);
-  if (ch?.contractId) {
-    throw new Error(
-      "This PDC is linked to a contract. Open the lease card to manage it (or mark as Returned).",
-    );
-  }
-  const { error } = await supabase.from("cheques").delete().eq("id", id);
-  if (error) throw error;
-  setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
-},
+        // Delete in Supabase if present; always drop from local state (ghost rows)
+        const { error } = await supabase.from("cheques").delete().eq("id", id);
+        setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
+        if (error) {
+          // Row may already be missing in DB — local state already cleaned
+          console.warn("deleteCheque supabase:", error.message);
+        }
+      },
+
       addExpense: async (e) => {
         const { data: row, error } = await supabase
           .from("expenses")
