@@ -360,7 +360,7 @@ function Dashboard() {
           value={currency(profit)}
           hint={
             otherIncome > 0
-              ? `Includes penalty/extra ${currency(otherIncome)}`
+              ? `${currency(otherIncome)}`
               : undefined
           }
           icon={Wallet}
