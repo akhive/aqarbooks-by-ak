@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currency, fmtDate, useStore, type Cheque, type ChequeStatus } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/cheques")({
   head: () => ({
@@ -48,6 +49,7 @@ const empty: Form = {
 
 function ChequesPage() {
   const { data, updateCheque, deleteCheque } = useStore();
+  const { isAdmin } = useAuth();
   const [tenantSearch, setTenantSearch] = useState("");
   const [flatSearch, setFlatSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -116,13 +118,13 @@ function ChequesPage() {
   };
 
   const remove = async (c: Cheque) => {
-    if (c.contractId) {
+    if (c.contractId && !isAdmin) {
       toast.error(
-        "This PDC is linked to a contract. Open the lease card to manage it (or mark as Returned).",
+        "Linked PDC — open the lease card, or sign in as superuser to delete here.",
       );
       return;
     }
-    if (!confirm("Delete this cheque?")) return;
+    if (!confirm("Delete this cheque permanently?")) return;
     try {
       await deleteCheque(c.id);
       toast.success("Deleted");
@@ -243,16 +245,16 @@ function ChequesPage() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          disabled={linked}
+                          disabled={linked && !isAdmin}
                           title={
-                            linked
-                              ? "Linked to contract — manage from lease card"
+                            linked && !isAdmin
+                              ? "Linked to contract — manage from lease card (or superuser)"
                               : "Delete"
                           }
                           onClick={() => remove(c)}
                         >
                           <Trash2
-                            className={`h-4 w-4 ${linked ? "opacity-30" : "text-destructive"}`}
+                            className={`h-4 w-4 ${linked && !isAdmin ? "opacity-30" : "text-destructive"}`}
                           />
                         </Button>
                       </div>
