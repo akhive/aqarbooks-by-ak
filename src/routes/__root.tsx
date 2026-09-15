@@ -12,6 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { StoreProvider } from "@/lib/store";
+import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "../supabase";
 
@@ -155,7 +156,11 @@ function AuthGate({ children }: { children: ReactNode }) {
   }
 
   // Always keep StoreProvider so useStore never crashes
-  return <StoreProvider>{children}</StoreProvider>;
+  return (
+    <AuthProvider>
+      <StoreProvider>{children}</StoreProvider>
+    </AuthProvider>
+  );
 }
 
 function RootComponent() {
