@@ -53,7 +53,7 @@ export type Cheque = {
   status: ChequeStatus;
   clearedDate?: string;
   reconciled?: boolean;
-  kind?: "rent" | "deposit";
+  kind?: "rent" | "deposit" | "settlement" | "penalty" | "other" | "refund" | "payable";
 };
 
 export type Expense = {
@@ -140,7 +140,11 @@ const mapCheque = (r: any): Cheque => ({
   status: r.status || "PDC",
   clearedDate: r.cleared_date || "",
   reconciled: r.reconciled || false,
-  kind: r.kind === "deposit" ? "deposit" : "rent",
+  kind: (["deposit", "settlement", "penalty", "other", "refund", "payable"].includes(
+    String(r.kind || "").toLowerCase(),
+  )
+    ? String(r.kind).toLowerCase()
+    : "rent") as Cheque["kind"],
 });
 
 const mapExpense = (r: any): Expense => ({
@@ -404,14 +408,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       deleteCheque: async (id) => {
-        // Delete in Supabase if present; always drop from local state (ghost rows)
         const { error } = await supabase.from("cheques").delete().eq("id", id);
         setData((p) => ({ ...p, cheques: p.cheques.filter((x) => x.id !== id) }));
-        if (error) {
-          // Row may already be missing in DB — local state already cleaned
-          console.warn("deleteCheque supabase:", error.message);
-        }
+        if (error) console.warn("deleteCheque:", error.message);
       },
+
 
       addExpense: async (e) => {
         const { data: row, error } = await supabase
