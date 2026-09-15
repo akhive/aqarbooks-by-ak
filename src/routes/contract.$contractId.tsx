@@ -181,11 +181,24 @@ function ContractDetailPage() {
   const rentCheques = useMemo(() => {
     if (!contract) return [];
     return data.cheques
-      .filter(
-        (c) =>
-          (c.contractId === contractId || (!c.contractId && c.tenantId === contract.tenantId)) &&
-          (c.kind || "rent") !== "deposit",
-      )
+      .filter((c) => {
+        if (!(c.contractId === contractId || (!c.contractId && c.tenantId === contract.tenantId)))
+          return false;
+        const k = (c.kind || "rent").toLowerCase();
+        if (k === "deposit" || k === "refund" || k === "payable") return false;
+        return true;
+      })
+      .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
+  }, [data.cheques, contractId, contract]);
+
+  const issuedChequesList = useMemo(() => {
+    if (!contract) return [];
+    return data.cheques
+      .filter((c) => {
+        if (c.contractId !== contractId) return false;
+        const k = (c.kind || "").toLowerCase();
+        return k === "refund" || k === "payable";
+      })
       .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
   }, [data.cheques, contractId, contract]);
 
@@ -223,10 +236,11 @@ function ContractDetailPage() {
         outstanding: 0,
         paymentCheques: [] as typeof data.cheques,
         issuedCheques: [] as typeof data.cheques,
+        breakDate: "",
       };
     }
 
-    // Prefer manual actual rent from break settlement when set
+    // Manual actual rent from break when set
     const rentDue =
       contract.actualRent && contract.actualRent > 0
         ? contract.actualRent
@@ -237,32 +251,32 @@ function ContractDetailPage() {
       contract.status === "Broken" ||
       contract.status === "Cancelled" ||
       contract.status === "Ended";
-    // Deposit refund credit after break (user break form / deposit on file)
     const depositCredit = isSettled ? contract.depositAmount || 0 : 0;
 
     const linked = data.cheques.filter((c) => c.contractId === contract.id);
 
-    // Payments held against the lease (not returned/bounced, not deposit, not refund-to-tenant)
+    // From tenant: rent / settlement / penalty / other — not deposit, not refund-to-tenant
     const paymentCheques = linked.filter((c) => {
       const k = (c.kind || "rent").toLowerCase();
-      if (k === "deposit" || k === "refund" || k === "payable") return false;
+      if (["deposit", "refund", "payable"].includes(k)) return false;
       const st = (c.status || "PDC").toLowerCase();
       if (st === "returned" || st === "bounced") return false;
       return true;
     });
     const onLease = paymentCheques.reduce((s, c) => s + (c.amount || 0), 0);
 
-    // Cheques issued TO tenant (settle payable outstanding)
+    // Landlord → tenant (settle payable)
     const issuedCheques = linked.filter((c) => {
       const k = (c.kind || "").toLowerCase();
       return k === "refund" || k === "payable";
     });
     const issuedToTenant = issuedCheques.reduce((s, c) => s + (c.amount || 0), 0);
 
-    // due − payments + (payable was negative so adding issued brings toward zero)
-    // net before issue = due - onLease; if -1000, + issued 1000 → 0
+    // net before issues: due - tenant payments (negative = payable to tenant)
+    // issued to tenant reduces that payable (moves toward zero): outstanding = net + issued
     const due = rentDue + penalty + extra - depositCredit;
-    const outstandingAmt = due - onLease + issuedToTenant;
+    const net = due - onLease;
+    const outstandingAmt = net + issuedToTenant;
 
     return {
       rentDue,
@@ -277,6 +291,7 @@ function ContractDetailPage() {
       breakDate: contract.endedAt || "",
     };
   }, [contract, data.cheques]);
+
 
 
 
@@ -599,7 +614,11 @@ function ContractDetailPage() {
         reconciled: false,
         kind: addChKind as any,
       });
-      toast.success("Cheque added");
+      toast.success(
+        addChKind === "refund" || addChKind === "payable"
+          ? "Issued cheque saved — outstanding updated"
+          : "Cheque added",
+      );
       setAddChequeOpen(false);
       await refresh();
     } catch (e: any) {
@@ -1287,6 +1306,24 @@ function ContractDetailPage() {
           </Button>
         </div>
         <ChequeTable rows={rentCheques} title="" />
+
+        <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-base font-semibold">Payment schedule (Issued cheques)</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              openAddCheque({
+                amount: outstanding.outstanding < 0 ? Math.abs(outstanding.outstanding) : 0,
+                kind: "refund",
+              })
+            }
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Issue cheque
+          </Button>
+        </div>
+        <ChequeTable rows={issuedChequesList} title="" />
 
         <div className="no-print mb-2 mt-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-base font-semibold">Deposit cheques</h3>
