@@ -358,11 +358,6 @@ function Dashboard() {
         <Stat
           label="Net profit"
           value={currency(profit)}
-          hint={
-            otherIncome > 0
-              ? `${currency(otherIncome)}`
-              : undefined
-          }
           icon={Wallet}
           tone={profit >= 0 ? "positive" : "negative"}
           palette={profit >= 0 ? "emerald" : "emerald"}
