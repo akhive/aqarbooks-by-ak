@@ -105,7 +105,7 @@ function nextChequeNo(first: string, offset: number): string {
   return prefix + String(n).padStart(digits.length, "0");
 }
 
-type SplitRow = { date: string; chequeNo: string; amount: number };
+type SplitRow = { date: string; chequeNo: string; bank: string; amount: number };
 
 
 function localToday() {
@@ -452,6 +452,7 @@ function ContractDetailPage() {
     const each = count > 0 ? Math.round((total / count) * 100) / 100 : 0;
     let remaining = total;
     const firstNo = prev?.[0]?.chequeNo || "";
+    const firstBank = prev?.[0]?.bank || "";
     return Array.from({ length: count }, (_, i) => {
       const amount =
         i === count - 1 ? Math.round(remaining * 100) / 100 : each;
@@ -459,12 +460,9 @@ function ContractDetailPage() {
       return {
         date: dates[i] || "",
         chequeNo: firstNo ? nextChequeNo(firstNo, i) : "",
+        bank: prev?.[i]?.bank != null && prev.length === count ? prev[i].bank : firstBank,
         amount: prev?.[i]?.amount != null && prev.length === count ? prev[i].amount : amount,
       };
-    }).map((row, i, arr) => {
-      // last row absorbs rounding from equal split when rebuilding amounts
-      if (prev && prev.length === count) return row;
-      return row;
     });
   };
 
@@ -492,6 +490,17 @@ function ContractDetailPage() {
           for (let i = 1; i < next.length; i++) {
             if (!(next[i].chequeNo || "").trim()) {
               next[i] = { ...next[i], chequeNo: nextChequeNo(first, i) };
+            }
+          }
+        }
+      }
+      // Auto-fill empty bank from first row
+      if (index === 0 && patch.bank !== undefined) {
+        const bank = (patch.bank || "").trim();
+        if (bank) {
+          for (let i = 1; i < next.length; i++) {
+            if (!(next[i].bank || "").trim()) {
+              next[i] = { ...next[i], bank };
             }
           }
         }
@@ -565,7 +574,7 @@ function ContractDetailPage() {
           contractId: contract.id,
           chequeDate: r.date,
           chequeNo: r.chequeNo || "",
-          bank: "",
+          bank: r.bank || "",
           amount: r.amount,
           status: "PDC",
           reconciled: false,
@@ -1601,16 +1610,17 @@ function ContractDetailPage() {
             </div>
 
             <div className="space-y-2">
-              <div className="grid grid-cols-[28px_1fr_1fr_1fr] gap-2 px-1 text-xs font-medium text-muted-foreground">
+              <div className="grid grid-cols-[24px_1fr_1fr_1fr_0.9fr] gap-2 px-1 text-xs font-medium text-muted-foreground">
                 <span>#</span>
                 <span>Date</span>
                 <span>Cheque No</span>
+                <span>Bank</span>
                 <span className="text-right">Amount</span>
               </div>
               {splitRows.map((row, i) => (
                 <div
                   key={i}
-                  className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2"
+                  className="grid grid-cols-[24px_1fr_1fr_1fr_0.9fr] items-center gap-2"
                 >
                   <span className="text-sm text-muted-foreground">{i + 1}</span>
                   <Input
@@ -1624,6 +1634,12 @@ function ContractDetailPage() {
                     onChange={(e) => updateSplitRow(i, { chequeNo: e.target.value })}
                   />
                   <Input
+                    list="split-bank-list"
+                    value={row.bank || ""}
+                    placeholder={i === 0 ? "e.g. DIB" : "same"}
+                    onChange={(e) => updateSplitRow(i, { bank: e.target.value })}
+                  />
+                  <Input
                     type="number"
                     className="text-right"
                     value={row.amount || ""}
@@ -1633,6 +1649,11 @@ function ContractDetailPage() {
                   />
                 </div>
               ))}
+              <datalist id="split-bank-list">
+                {banks.map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={autoFillChequeNos}>
                   Auto-fill cheque nos from first
