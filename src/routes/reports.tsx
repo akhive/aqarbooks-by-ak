@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currency, daysUntil, fmtDate, useStore } from "@/lib/store";
@@ -111,12 +118,19 @@ function ReportsPage() {
   const [pdcSort, setPdcSort] = useState<"asc" | "desc">("asc");
   const [depositSort, setDepositSort] = useState<"asc" | "desc">("asc");
   const [includeExpiredInRenewals, setIncludeExpiredInRenewals] = useState(false);
+  const [leasesYear, setLeasesYear] = useState(String(year));
+  const [leasesActiveOnly, setLeasesActiveOnly] = useState(true);
+  const [regFrom, setRegFrom] = useState("");
+  const [regTo, setRegTo] = useState("");
 
   const tenantName = (id: string) => data.tenants.find((t) => t.id === id)?.name ?? "—";
   const unitLabel = (id: string) => {
     const u = data.units.find((x) => x.id === id);
     return u ? `${u.flatNo}${u.building ? ` — ${u.building}` : ""}` : "—";
   };
+  const unitFlat = (id: string) => data.units.find((x) => x.id === id)?.flatNo || "—";
+  const unitBuilding = (id: string) => data.units.find((x) => x.id === id)?.building || "—";
+  const tenantMobile = (id: string) => data.tenants.find((t) => t.id === id)?.mobile || "—";
 
   const matchTenantFlat = (tenantId: string, unitId?: string) => {
     const tq = tenantSearch.trim().toLowerCase();
@@ -415,6 +429,156 @@ function ReportsPage() {
     [otherIncomeRows],
   );
 
+  /** Leases created in selected calendar year (by lease start date). */
+  const yearlyLeaseRows = useMemo(() => {
+    const y = Number(leasesYear) || year;
+    return data.contracts
+      .filter((c) => {
+        if ((c.status || "Active") === "Draft") return false;
+        const sy = (c.startDate || "").slice(0, 4);
+        if (sy !== String(y)) return false;
+        if (leasesActiveOnly) {
+          const st = c.status || "Active";
+          if (st !== "Active" && st !== "Draft") return false;
+          // still Active and not past end treated as active for list
+        }
+        if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
+        return true;
+      })
+      .sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
+  }, [
+    data.contracts,
+    data.tenants,
+    data.units,
+    leasesYear,
+    leasesActiveOnly,
+    year,
+    tenantSearch,
+    flatSearch,
+  ]);
+
+  const yearlyLeaseTotal = yearlyLeaseRows.reduce((s, c) => s + effectiveRent(c), 0);
+
+  /**
+   * Tenant detailed register — one row per cheque (or lease with no cheques).
+   * Creation date filter uses lease start date.
+   */
+  const tenantRegisterRows = useMemo(() => {
+    const contracts = data.contracts.filter((c) => {
+      if ((c.status || "Active") === "Draft") return false;
+      if (regFrom && (c.startDate || "") < regFrom) return false;
+      if (regTo && (c.startDate || "") > regTo) return false;
+      if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
+      return true;
+    });
+
+    const rows: {
+      contractId: string;
+      leaseNo: string;
+      createDate: string;
+      tenantId: string;
+      unitId: string;
+      totalRent: number;
+      endDate: string;
+      status: string;
+      chequeAmount: number;
+      chequeNo: string;
+      chequeDate: string;
+      bank: string;
+      clearedDate: string;
+      cleared: string;
+      description: string;
+    }[] = [];
+
+    for (const c of contracts) {
+      const cheques = data.cheques
+        .filter((ch) => ch.contractId === c.id)
+        .sort((a, b) => (a.chequeDate || "").localeCompare(b.chequeDate || ""));
+      if (cheques.length === 0) {
+        rows.push({
+          contractId: c.id,
+          leaseNo: c.leaseNo || "",
+          createDate: c.startDate || "",
+          tenantId: c.tenantId,
+          unitId: c.unitId,
+          totalRent: effectiveRent(c),
+          endDate: effectiveEnd(c),
+          status: c.status || "Active",
+          chequeAmount: 0,
+          chequeNo: "",
+          chequeDate: "",
+          bank: "",
+          clearedDate: "",
+          cleared: "",
+          description: "",
+        });
+      } else {
+        for (const ch of cheques) {
+          const k = (ch.kind || "rent").toLowerCase();
+          const desc =
+            k === "deposit"
+              ? "DEPOSIT"
+              : k === "penalty"
+                ? "PENALTY"
+                : k === "other"
+                  ? "OTHER"
+                  : k === "settlement"
+                    ? "SETTLEMENT"
+                    : k === "refund" || k === "payable"
+                      ? "REFUND"
+                      : "RENT";
+          rows.push({
+            contractId: c.id,
+            leaseNo: c.leaseNo || "",
+            createDate: c.startDate || "",
+            tenantId: c.tenantId,
+            unitId: c.unitId,
+            totalRent: effectiveRent(c),
+            endDate: effectiveEnd(c),
+            status: c.status || "Active",
+            chequeAmount: ch.amount || 0,
+            chequeNo: ch.chequeNo || "",
+            chequeDate: ch.chequeDate || "",
+            bank: ch.bank || "",
+            clearedDate: ch.clearedDate || "",
+            cleared:
+              ch.status === "Cleared" || ch.status === "Deposited" ? "YES" : "NO",
+            description: desc,
+          });
+        }
+      }
+    }
+
+    return rows.sort((a, b) => {
+      const d = (a.createDate || "").localeCompare(b.createDate || "");
+      if (d !== 0) return d;
+      return (a.leaseNo || "").localeCompare(b.leaseNo || "", undefined, { numeric: true });
+    });
+  }, [
+    data.contracts,
+    data.cheques,
+    data.tenants,
+    data.units,
+    regFrom,
+    regTo,
+    tenantSearch,
+    flatSearch,
+  ]);
+
+  const tenantRegisterChequeTotal = tenantRegisterRows.reduce(
+    (s, r) => s + (r.chequeAmount || 0),
+    0,
+  );
+
+  const yearOptions = useMemo(() => {
+    const ys = new Set<number>([year, year - 1, year - 2, year + 1]);
+    data.contracts.forEach((c) => {
+      const y = Number((c.startDate || "").slice(0, 4));
+      if (y > 2000 && y < 2100) ys.add(y);
+    });
+    return [...ys].sort((a, b) => b - a);
+  }, [data.contracts, year]);
+
   return (
     <AppShell>
       <div className="print-only mb-6 hidden border-b pb-4 print:block">
@@ -489,6 +653,8 @@ function ReportsPage() {
           <TabsTrigger value="vacant">Vacant units</TabsTrigger>
           <TabsTrigger value="deposit">Deposits</TabsTrigger>
           <TabsTrigger value="other-income">Other incomes</TabsTrigger>
+          <TabsTrigger value="yearly-leases">Leases by year</TabsTrigger>
+          <TabsTrigger value="tenant-register">Tenant detailed register</TabsTrigger>
         </TabsList>
 
         <TabsContent value="lease">
@@ -570,6 +736,9 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Income breakdown</CardTitle>
+                <CardDescription>
+                  Based on actual rent · {prevYear} · {year} · Deferred
+                </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
@@ -717,6 +886,9 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Yearly profit</CardTitle>
+                <CardDescription>
+                  Actual rent + penalty + extra charges − expenses
+                </CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
@@ -1075,6 +1247,7 @@ function ReportsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Other incomes</CardTitle>
+                <CardDescription>Penalty + extra charges from break/cancel</CardDescription>
               </div>
               <ReportActions
                 onExport={() =>
@@ -1144,6 +1317,272 @@ function ReportsPage() {
                       <TableCell className="text-right">
                         {currency(otherIncomeTotals.total)}
                       </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="yearly-leases">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Leases by year</CardTitle>
+                <CardDescription>
+                  Leases whose start date falls in the selected year
+                  {leasesActiveOnly ? " · Active only" : " · All statuses"}
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="no-print w-[120px]">
+                  <Label className="text-xs">Year</Label>
+                  <Select value={leasesYear} onValueChange={setLeasesYear}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {yearOptions.map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="no-print flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={leasesActiveOnly}
+                    onChange={(e) => setLeasesActiveOnly(e.target.checked)}
+                  />
+                  Active leases only
+                </label>
+                <ReportActions
+                  onExport={() =>
+                    exportCSV(
+                      `leases-${leasesYear}.csv`,
+                      [
+                        "Lease No",
+                        "Tenant",
+                        "Unit",
+                        "Building",
+                        "Status",
+                        "Start",
+                        "End",
+                        "Rent",
+                        "Mobile",
+                      ],
+                      yearlyLeaseRows.map((c) => [
+                        c.leaseNo || "",
+                        tenantName(c.tenantId),
+                        unitFlat(c.unitId),
+                        unitBuilding(c.unitId),
+                        c.status || "Active",
+                        fmtDate(c.startDate),
+                        fmtDate(effectiveEnd(c)),
+                        effectiveRent(c),
+                        tenantMobile(c.tenantId),
+                      ]),
+                    )
+                  }
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lease No</TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Building</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead className="text-right">Rent</TableHead>
+                    <TableHead>Mobile</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {yearlyLeaseRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                        No leases for {leasesYear}
+                        {leasesActiveOnly ? " (active only)" : ""}.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {yearlyLeaseRows.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <LeaseLink id={c.id} leaseNo={c.leaseNo} />
+                      </TableCell>
+                      <TableCell>{tenantName(c.tenantId)}</TableCell>
+                      <TableCell>{unitFlat(c.unitId)}</TableCell>
+                      <TableCell>{unitBuilding(c.unitId)}</TableCell>
+                      <TableCell>{c.status || "Active"}</TableCell>
+                      <TableCell>{fmtDate(c.startDate)}</TableCell>
+                      <TableCell>{fmtDate(effectiveEnd(c))}</TableCell>
+                      <TableCell className="text-right">{currency(effectiveRent(c))}</TableCell>
+                      <TableCell>{tenantMobile(c.tenantId)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {yearlyLeaseRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={7}>TOTAL · {yearlyLeaseRows.length} lease(s)</TableCell>
+                      <TableCell className="text-right">{currency(yearlyLeaseTotal)}</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="tenant-register">
+          <Card>
+            <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Tenant detailed register</CardTitle>
+                <CardDescription>
+                  Lease + cheque details (one row per cheque). Filter by lease start / creation
+                  date.
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="no-print">
+                  <Label className="text-xs">Creation from</Label>
+                  <Input
+                    type="date"
+                    value={regFrom}
+                    onChange={(e) => setRegFrom(e.target.value)}
+                  />
+                </div>
+                <div className="no-print">
+                  <Label className="text-xs">Creation to</Label>
+                  <Input type="date" value={regTo} onChange={(e) => setRegTo(e.target.value)} />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="no-print"
+                  onClick={() => {
+                    setRegFrom("");
+                    setRegTo("");
+                  }}
+                >
+                  Clear dates
+                </Button>
+                <ReportActions
+                  onExport={() =>
+                    exportCSV(
+                      "tenant-detailed-register.csv",
+                      [
+                        "Property",
+                        "Lease No",
+                        "Date",
+                        "Tenant",
+                        "Unit No",
+                        "Cheque Amount",
+                        "Chq No",
+                        "Cheque Date",
+                        "Bank",
+                        "Clearance Date",
+                        "Chq Cleared",
+                        "Total Rent",
+                        "Renewal Date",
+                        "Renewal Status",
+                        "Contact Mobile",
+                        "Description",
+                      ],
+                      tenantRegisterRows.map((r) => [
+                        unitBuilding(r.unitId),
+                        r.leaseNo,
+                        fmtDate(r.createDate),
+                        tenantName(r.tenantId),
+                        unitFlat(r.unitId),
+                        r.chequeAmount || "",
+                        r.chequeNo,
+                        r.chequeDate ? fmtDate(r.chequeDate) : "",
+                        r.bank,
+                        r.clearedDate ? fmtDate(r.clearedDate) : "",
+                        r.cleared,
+                        r.totalRent,
+                        fmtDate(r.endDate),
+                        r.status,
+                        tenantMobile(r.tenantId),
+                        r.description,
+                      ]),
+                    )
+                  }
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Property</TableHead>
+                    <TableHead>Lease No</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Chq Amt</TableHead>
+                    <TableHead>Chq No</TableHead>
+                    <TableHead>Chq Date</TableHead>
+                    <TableHead>Bank</TableHead>
+                    <TableHead>Clearance</TableHead>
+                    <TableHead>Cleared</TableHead>
+                    <TableHead className="text-right">Total Rent</TableHead>
+                    <TableHead>End / Renewal</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Mobile</TableHead>
+                    <TableHead>Description</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tenantRegisterRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={16} className="py-8 text-center text-muted-foreground">
+                        No rows for this creation period.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {tenantRegisterRows.map((r, i) => (
+                    <TableRow key={`${r.contractId}-${r.chequeNo}-${r.chequeDate}-${i}`}>
+                      <TableCell className="text-xs">{unitBuilding(r.unitId)}</TableCell>
+                      <TableCell>
+                        <LeaseLink id={r.contractId} leaseNo={r.leaseNo} />
+                      </TableCell>
+                      <TableCell>{fmtDate(r.createDate)}</TableCell>
+                      <TableCell>{tenantName(r.tenantId)}</TableCell>
+                      <TableCell>{unitFlat(r.unitId)}</TableCell>
+                      <TableCell className="text-right">
+                        {r.chequeAmount ? currency(r.chequeAmount) : "—"}
+                      </TableCell>
+                      <TableCell>{r.chequeNo || "—"}</TableCell>
+                      <TableCell>{r.chequeDate ? fmtDate(r.chequeDate) : "—"}</TableCell>
+                      <TableCell>{r.bank || "—"}</TableCell>
+                      <TableCell>{r.clearedDate ? fmtDate(r.clearedDate) : "—"}</TableCell>
+                      <TableCell>{r.cleared || "—"}</TableCell>
+                      <TableCell className="text-right">{currency(r.totalRent)}</TableCell>
+                      <TableCell>{fmtDate(r.endDate)}</TableCell>
+                      <TableCell>{r.status}</TableCell>
+                      <TableCell>{tenantMobile(r.tenantId)}</TableCell>
+                      <TableCell>{r.description || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                  {tenantRegisterRows.length > 0 && (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell colSpan={5}>TOTAL</TableCell>
+                      <TableCell className="text-right">
+                        {currency(tenantRegisterChequeTotal)}
+                      </TableCell>
+                      <TableCell colSpan={10} />
                     </TableRow>
                   )}
                 </TableBody>
