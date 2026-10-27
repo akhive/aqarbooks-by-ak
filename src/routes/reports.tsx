@@ -429,23 +429,28 @@ function ReportsPage() {
     [otherIncomeRows],
   );
 
-  /** Leases created in selected calendar year (by lease start date). */
+  /** Leases created in selected calendar year (by created/submitted date). */
   const yearlyLeaseRows = useMemo(() => {
     const y = Number(leasesYear) || year;
     return data.contracts
       .filter((c) => {
         if ((c.status || "Active") === "Draft") return false;
-        const sy = (c.startDate || "").slice(0, 4);
+        // Prefer createdDate; fallback startDate for older rows
+        const created = (c as any).createdDate || c.startDate || "";
+        const sy = created.slice(0, 4);
         if (sy !== String(y)) return false;
         if (leasesActiveOnly) {
           const st = c.status || "Active";
-          if (st !== "Active" && st !== "Draft") return false;
-          // still Active and not past end treated as active for list
+          if (st !== "Active") return false;
         }
         if (!matchTenantFlat(c.tenantId, c.unitId)) return false;
         return true;
       })
-      .sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
+      .sort((a, b) => {
+        const ad = (a as any).createdDate || a.startDate || "";
+        const bd = (b as any).createdDate || b.startDate || "";
+        return ad.localeCompare(bd);
+      });
   }, [
     data.contracts,
     data.tenants,
@@ -498,7 +503,7 @@ function ReportsPage() {
         rows.push({
           contractId: c.id,
           leaseNo: c.leaseNo || "",
-          createDate: c.startDate || "",
+          createDate: (c as any).createdDate || c.startDate || "",
           tenantId: c.tenantId,
           unitId: c.unitId,
           totalRent: effectiveRent(c),
@@ -530,7 +535,7 @@ function ReportsPage() {
           rows.push({
             contractId: c.id,
             leaseNo: c.leaseNo || "",
-            createDate: c.startDate || "",
+            createDate: (c as any).createdDate || c.startDate || "",
             tenantId: c.tenantId,
             unitId: c.unitId,
             totalRent: effectiveRent(c),
@@ -1331,7 +1336,7 @@ function ReportsPage() {
               <div>
                 <CardTitle className="text-base">Leases by year</CardTitle>
                 <CardDescription>
-                  Leases whose start date falls in the selected year
+                  Leases whose created/submitted date falls in the selected year
                   {leasesActiveOnly ? " · Active only" : " · All statuses"}
                 </CardDescription>
               </div>
@@ -1369,6 +1374,7 @@ function ReportsPage() {
                         "Unit",
                         "Building",
                         "Status",
+                        "Created",
                         "Start",
                         "End",
                         "Rent",
@@ -1380,6 +1386,7 @@ function ReportsPage() {
                         unitFlat(c.unitId),
                         unitBuilding(c.unitId),
                         c.status || "Active",
+                        fmtDate((c as any).createdDate || c.startDate),
                         fmtDate(c.startDate),
                         fmtDate(effectiveEnd(c)),
                         effectiveRent(c),
@@ -1399,6 +1406,7 @@ function ReportsPage() {
                     <TableHead>Unit</TableHead>
                     <TableHead>Building</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead>Start</TableHead>
                     <TableHead>End</TableHead>
                     <TableHead className="text-right">Rent</TableHead>
@@ -1408,7 +1416,7 @@ function ReportsPage() {
                 <TableBody>
                   {yearlyLeaseRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                         No leases for {leasesYear}
                         {leasesActiveOnly ? " (active only)" : ""}.
                       </TableCell>
@@ -1423,6 +1431,9 @@ function ReportsPage() {
                       <TableCell>{unitFlat(c.unitId)}</TableCell>
                       <TableCell>{unitBuilding(c.unitId)}</TableCell>
                       <TableCell>{c.status || "Active"}</TableCell>
+                      <TableCell>
+                        {fmtDate((c as any).createdDate || c.startDate)}
+                      </TableCell>
                       <TableCell>{fmtDate(c.startDate)}</TableCell>
                       <TableCell>{fmtDate(effectiveEnd(c))}</TableCell>
                       <TableCell className="text-right">{currency(effectiveRent(c))}</TableCell>
@@ -1431,7 +1442,7 @@ function ReportsPage() {
                   ))}
                   {yearlyLeaseRows.length > 0 && (
                     <TableRow className="bg-muted/40 font-semibold">
-                      <TableCell colSpan={7}>TOTAL · {yearlyLeaseRows.length} lease(s)</TableCell>
+                      <TableCell colSpan={8}>TOTAL · {yearlyLeaseRows.length} lease(s)</TableCell>
                       <TableCell className="text-right">{currency(yearlyLeaseTotal)}</TableCell>
                       <TableCell />
                     </TableRow>
