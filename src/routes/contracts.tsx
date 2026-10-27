@@ -40,6 +40,7 @@ const empty: Form = {
   unitId: "",
   startDate: "",
   endDate: "",
+  createdDate: "",
   rent: 0,
   previousRent: 0,
   bedroomType: "",
@@ -274,7 +275,12 @@ function ContractsPage() {
 
   const startAdd = () => {
     setEditing(null);
-    setForm({ ...empty, leaseNo: nextLeaseNo(), status: "Active" });
+    setForm({
+      ...empty,
+      leaseNo: nextLeaseNo(),
+      status: "Active",
+      createdDate: new Date().toISOString().slice(0, 10),
+    });
     setError("");
     setOpen(true);
   };
@@ -299,6 +305,7 @@ function ContractsPage() {
       bedroomType: c.bedroomType,
       startDate: newStart,
       endDate: newEnd,
+      createdDate: new Date().toISOString().slice(0, 10),
       rent: 0,
       previousRent: c.rent,
       status: "Active",
@@ -668,25 +675,36 @@ function ContractsPage() {
                 Default from Unit. Change only if needed.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Start Date *</Label>
-                <Input
-                  type="date"
-                  value={form.startDate}
-                  onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                />
+                          <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Start date</Label>
+                  <Input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>End date</Label>
+                  <Input
+                    type="date"
+                    value={form.endDate}
+                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                  />
+                </div>
               </div>
               <div>
-                <Label>End Date *</Label>
+                <Label>Created / Submitted date</Label>
                 <Input
                   type="date"
-                  value={form.endDate}
-                  onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                  value={form.createdDate || ""}
+                  onChange={(e) => setForm({ ...form, createdDate: e.target.value })}
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Defaults to today. Used in Reports → Leases by year.
+                </p>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+<div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>New Rent (AED) *</Label>
                 <Input
