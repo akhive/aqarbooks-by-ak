@@ -27,6 +27,8 @@ export type Contract = {
   unitId: string;
   startDate: string;
   endDate: string;
+  /** When the lease was created/submitted in the system (editable). */
+  createdDate?: string;
   rent: number;
   previousRent: number;
   bedroomType: string;
@@ -116,6 +118,7 @@ const mapContract = (r: any): Contract => ({
   unitId: r.unit_id || "",
   startDate: r.start_date || "",
   endDate: r.end_date || "",
+  createdDate: r.created_date || r.start_date || "",
   rent: Number(r.rent) || 0,
   previousRent: Number(r.previous_rent) || 0,
   bedroomType: r.bedroom_type || "",
@@ -299,6 +302,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             unit_id: c.unitId || null,
             start_date: c.startDate,
             end_date: c.endDate,
+            created_date: c.createdDate || c.startDate || null,
             rent: c.rent,
             previous_rent: previousRent,
             bedroom_type: c.bedroomType,
@@ -325,6 +329,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             unit_id: c.unitId || null,
             start_date: c.startDate,
             end_date: c.endDate,
+            created_date: c.createdDate || c.startDate || null,
             rent: c.rent,
             previous_rent: c.previousRent,
             bedroom_type: c.bedroomType,
