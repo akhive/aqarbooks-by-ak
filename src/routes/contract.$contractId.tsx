@@ -1209,6 +1209,12 @@ function ContractDetailPage() {
                   {fmtDate(contract.startDate)} → {fmtDate(contract.endDate)}
                 </span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Created / Submitted</span>
+                <span className="font-medium">
+                  {fmtDate(contract.createdDate || contract.startDate)}
+                </span>
+              </div>
               {isClosed && contract.endedAt && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Broken period</span>
