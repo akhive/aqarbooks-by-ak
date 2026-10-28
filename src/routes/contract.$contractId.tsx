@@ -331,6 +331,7 @@ function ContractDetailPage() {
   const [renewStart, setRenewStart] = useState("");
   const [renewEnd, setRenewEnd] = useState("");
   const [renewLeaseNo, setRenewLeaseNo] = useState("");
+  const [renewCreatedDate, setRenewCreatedDate] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [chequeDeleteId, setChequeDeleteId] = useState<string | null>(null);
@@ -764,6 +765,7 @@ function ContractDetailPage() {
     setRenewEnd(newEnd);
     setRenewRent(0);
     setRenewDeposit(firstDep); // auto — not typed by user
+    setRenewCreatedDate(new Date().toISOString().slice(0, 10));
     setRenewOpen(true);
   };
 
@@ -781,6 +783,7 @@ function ContractDetailPage() {
         bedroomType: contract.bedroomType,
         startDate: renewStart,
         endDate: renewEnd,
+        createdDate: renewCreatedDate || new Date().toISOString().slice(0, 10),
         rent: renewRent,
         previousRent: contract.rent,
         status: "Draft",
@@ -1789,6 +1792,17 @@ function ContractDetailPage() {
                 <Label>End</Label>
                 <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
               </div>
+            </div>
+            <div>
+              <Label>Created / Submitted date</Label>
+              <Input
+                type="date"
+                value={renewCreatedDate}
+                onChange={(e) => setRenewCreatedDate(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Defaults to today — used in Reports → Leases by year
+              </p>
             </div>
             <div>
               <Label>Renewal rent (AED) *</Label>
