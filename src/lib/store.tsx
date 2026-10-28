@@ -461,7 +461,14 @@ export const currency = (n: number) =>
 
 export const fmtDate = (iso: string) => {
   if (!iso) return "—";
-  const dt = new Date(iso);
+  const raw = String(iso).trim();
+  // date-only DD-MM-YYYY → parse as local noon (avoid UTC shift)
+  const dayOnly = raw.length >= 10 ? raw.slice(0, 10) : raw;
+  const dt =
+    /^\d{4}-\d{2}-\d{2}$/.test(dayOnly)
+      ? new Date(dayOnly + "T12:00:00")
+      : new Date(raw);
+  if (Number.isNaN(dt.getTime())) return "—";
   return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 };
 
